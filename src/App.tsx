@@ -34,10 +34,13 @@ function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const refresh = async () => {
     try {
-      const auth = await api<{ accessToken: string; profile: Profile | null }>('/api/auth/telegram', json({ initData: telegram.initData, userId: telegram.user.id }));
+      setLoadError('');
+      if (!telegram.initData) throw new Error('Откройте приложение через кнопку бота в Telegram');
+      const auth = await api<{ accessToken: string; profile: Profile | null }>('/api/auth/telegram', json({ initData: telegram.initData }));
       localStorage.setItem('blisko-token', auth.accessToken);
       setOnline(true);
       if (!auth.profile) {
@@ -63,6 +66,7 @@ function App() {
       setNotifications(noteData.notifications);
     } catch (error) {
       console.error('Не удалось загрузить BLISKO', error);
+      setLoadError(error instanceof Error ? error.message : 'Не удалось загрузить профиль');
       setOnline(false);
     } finally {
       setLoading(false);
@@ -86,7 +90,8 @@ function App() {
     if (action === 'like') setLiked(items => items.includes(id) ? items : [...items, id]);
     await api(action === 'like' ? '/api/likes' : '/api/discover/skip', json({ profileId: id })).then(refresh).catch(error => console.error('Действие не сохранено', error));
   };
-  if (loading) return <div className="loading-screen">Загружаем твою анкету…</div>;
+  if (loading) return <div className="loading-screen">Загружаем профиль…</div>;
+  if (loadError) return <div className="loading-screen error-screen"><div><h2>Не удалось войти</h2><p>{loadError}</p><button className="primary" onClick={refresh}>Повторить</button></div></div>;
   if (!onboarded) return <Onboarding profile={profile} onDone={saveProfile} />;
   const current = discover[0];
   const activeChat = chats.find(chat => chat.id === selectedChat);

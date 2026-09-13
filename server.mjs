@@ -169,6 +169,7 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/api/health') return json(response, 200, { ok: true, service: 'blisko-api' });
   if (request.method === 'POST' && url.pathname === '/api/auth/telegram') {
     const payload = await body(request); if (payload === null) return json(response, 400, { error: 'Invalid JSON' });
+    if (typeof payload.initData !== 'string' || !payload.initData) return json(response, 401, { error: 'Telegram initData is required' });
     const user = payload.initData ? validateInitData(payload.initData) : { id: payload.userId || 1001, first_name: 'Алекс', username: 'demo' };
     if (!user) return json(response, 401, { error: 'Invalid Telegram initData' });
     const accessToken = randomUUID(); sessions.set(accessToken, { id: user.id, first_name: user.first_name || 'Пользователь', username: user.username });
