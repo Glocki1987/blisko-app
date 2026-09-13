@@ -37,7 +37,7 @@ function App() {
 
   const refresh = async () => {
     try {
-      const auth = await api<{ accessToken: string; profile: Profile | null }>('/api/auth/telegram', json({ userId: telegram.user.id }));
+      const auth = await api<{ accessToken: string; profile: Profile | null }>('/api/auth/telegram', json({ initData: telegram.initData, userId: telegram.user.id }));
       localStorage.setItem('blisko-token', auth.accessToken);
       setOnline(true);
       if (!auth.profile) {
