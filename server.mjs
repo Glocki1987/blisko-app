@@ -15,6 +15,7 @@ const notifications = new Map();
 let supabase = null;
 let supabaseReady = false;
 const conversationKey = (firstId, secondId) => [Number(firstId), Number(secondId)].sort((a, b) => a - b).join(':');
+const numericIds = (values) => (Array.isArray(values) ? values : []).map(Number).filter(Number.isFinite);
 function supabaseClient() {
   if (supabase) return supabase;
   const url = process.env.SUPABASE_URL;
@@ -46,7 +47,7 @@ async function loadSupabaseDatabase() {
     remoteRows('blisko_notifications', { order: 'created_at' }),
   ]);
   for (const profile of profileRows) userProfiles.set(String(profile.id), { ...profile, id: Number(profile.id), tags: Array.isArray(profile.tags) ? profile.tags : [], gender: profile.gender || 'female', interestedIn: profile.interested_in || 'all', updated_at: undefined });
-  for (const row of stateRows) userState.set(String(row.user_id), { likes: new Set(row.likes || []), skips: new Set(row.skips || []) });
+  for (const row of stateRows) userState.set(String(row.user_id), { likes: new Set(numericIds(row.likes)), skips: new Set(numericIds(row.skips)) });
   for (const row of messageRows) {
     const key = conversationKey(row.user_id, row.profile_id);
     if (!messages.has(key)) messages.set(key, []);
@@ -55,7 +56,7 @@ async function loadSupabaseDatabase() {
   for (const row of notificationRows) {
     const key = String(row.user_id);
     if (!notifications.has(key)) notifications.set(key, []);
-    notifications.get(key).push({ id: row.id, type: row.type, title: row.title, body: row.body, createdAt: row.created_at });
+    notifications.get(key).push({ id: row.id, type: row.type, title: row.title, body: row.body, relatedId: row.related_id, createdAt: row.created_at });
   }
   supabaseReady = true;
 }
@@ -69,7 +70,7 @@ async function remoteState(userId, state) {
 }
 async function remoteNotification(userId, notification) {
   if (!supabaseReady) return;
-  await remoteUpsert('blisko_notifications', { id: notification.id, user_id: String(userId), type: notification.type, title: notification.title, body: notification.body, created_at: notification.createdAt });
+  await remoteUpsert('blisko_notifications', { id: notification.id, user_id: String(userId), type: notification.type, title: notification.title, body: notification.body, related_id: notification.relatedId || null, created_at: notification.createdAt });
 }
 async function remoteMessage(userId, profileId, message) {
   if (!supabaseReady) return;
@@ -79,7 +80,7 @@ async function loadDatabase() {
   try {
     const saved = JSON.parse(await readFile(dbFile, 'utf8'));
     for (const [key, profile] of Object.entries(saved.userProfiles || {})) userProfiles.set(key, profile);
-    for (const [key, value] of Object.entries(saved.userState || {})) userState.set(key, { likes: new Set(value.likes || []), skips: new Set(value.skips || []) });
+    for (const [key, value] of Object.entries(saved.userState || {})) userState.set(key, { likes: new Set(numericIds(value.likes)), skips: new Set(numericIds(value.skips)) });
     for (const [key, value] of Object.entries(saved.messages || {})) messages.set(key, value);
     for (const [key, value] of Object.entries(saved.notifications || {})) notifications.set(key, value);
   } catch { /* first run creates the local database */ }

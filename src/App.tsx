@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, MapPin, MessageCircle, MoreHorizontal, Send, ShieldCheck, SlidersHorizontal, Sparkles, UserRound, X } from 'lucide-react';
 import { type Chat, type Gender, type InterestedIn, type Profile } from './data';
 import { telegram } from './telegram';
@@ -123,7 +123,29 @@ function Likes({ liked, matches, onOpen, onOpenChat }: { liked: number[]; matche
 }
 
 function Messages({ chats, onOpen }: { chats: Chat[]; onOpen: (id: number) => void }) { return <section><div className="section-heading"><div><p className="eyebrow">ОБЩЕНИЕ</p><h2>Сообщения</h2></div><MoreHorizontal /></div><div className="chat-list">{chats.map(chat => <button className="chat-row" key={chat.id} onClick={() => onOpen(chat.id)}><div className="avatar-wrap"><img src={chat.avatar} alt="" /></div><div className="chat-text"><div><b>{chat.name}</b><time>{chat.time}</time></div><p>{chat.last}</p></div></button>)}</div></section>; }
-function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; onSent: () => void }) { const [message, setMessage] = useState(''); const [items, setItems] = useState<Message[]>([]); useEffect(() => { api<{ messages: Message[] }>(`/api/conversations/${chat.id}/messages`).then(result => setItems(result.messages)).catch(console.error); }, [chat.id]); const send = async (event: FormEvent) => { event.preventDefault(); if (!message.trim()) return; const text = message.trim(); setMessage(''); const result = await api<{ message: Message }>(`/api/conversations/${chat.id}/messages`, json({ text })); setItems(items => [...items, result.message]); onSent(); }; return <main className="chat-view"><header className="chat-head"><button className="back" onClick={onBack}><ArrowLeft /></button><img src={chat.avatar} alt="" /><div><b>{chat.name}</b><small>в сети</small></div></header><div className="messages">{items.map(item => <div className={`bubble ${item.sender === 'me' ? 'mine' : 'theirs'}`} key={item.id}>{item.text}</div>)}</div><form className="composer" onSubmit={send}><input value={message} onChange={event => setMessage(event.target.value)} placeholder="Написать сообщение..." /><button><Send size={18} /></button></form></main>; }
+function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; onSent: () => void }) {
+  const [message, setMessage] = useState('');
+  const [items, setItems] = useState<Message[]>([]);
+  const [sending, setSending] = useState(false);
+  const messagesEnd = useRef<HTMLDivElement>(null);
+  useEffect(() => { api<{ messages: Message[] }>(`/api/conversations/${chat.id}/messages`).then(result => setItems(result.messages)).catch(console.error); }, [chat.id]);
+  useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [items, sending]);
+  const send = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!message.trim() || sending) return;
+    const text = message.trim();
+    setMessage('');
+    setSending(true);
+    try {
+      const result = await api<{ message: Message }>(`/api/conversations/${chat.id}/messages`, json({ text }));
+      setItems(current => [...current, result.message]);
+      onSent();
+    } finally {
+      setSending(false);
+    }
+  };
+  return <main className="chat-view"><header className="chat-head"><button className="back" onClick={onBack}><ArrowLeft /></button><img src={chat.avatar} alt="" /><div><b>{chat.name}</b><small>в сети</small></div></header><div className="messages">{items.map(item => <div className={`bubble ${item.sender === 'me' ? 'mine' : 'theirs'}`} key={item.id}>{item.text}</div>)}{sending && <div className="typing-indicator" aria-label="Отправка сообщения"><i /><i /><i /></div>}<div ref={messagesEnd} /></div><form className="composer" onSubmit={send}><input value={message} onChange={event => setMessage(event.target.value)} placeholder="Написать сообщение..." /><button disabled={sending}><Send size={18} /></button></form></main>;
+}
 
 function ProfileView({ profile, online, onSave, onOpenUtility }: { profile: Profile; online: boolean; onSave: (profile: Profile) => void; onOpenUtility: (type: 'notifications' | 'privacy' | 'help') => void }) { const [editing, setEditing] = useState(false); const [form, setForm] = useState(profile); const setPhoto = (file?: File) => { if (!file || !file.type.startsWith('image/') || file.size > 5_000_000) return; const reader = new FileReader(); reader.onload = () => setForm({ ...form, image: String(reader.result) }); reader.readAsDataURL(file); }; return <section><div className="profile-hero"><img src={profile.image} alt={profile.name} /><button className="edit" onClick={() => { setForm(profile); setEditing(!editing); }}>{editing ? 'Отмена' : 'Изменить профиль'}</button><h2>{profile.name}, {profile.age}</h2><p><MapPin size={14} /> {profile.city} · {online ? 'синхронизировано' : 'офлайн'}</p></div>{editing ? <ProfileForm form={form} setForm={setForm} setPhoto={setPhoto} submit={event => { event.preventDefault(); onSave(form); setEditing(false); }} submitLabel="Сохранить изменения" /> : <div className="settings"><button className="setting" onClick={() => onOpenUtility('notifications')}><span><Bell /></span>Уведомления<ChevronRight className="push" size={18} /></button><button className="setting" onClick={() => onOpenUtility('privacy')}><span><ShieldCheck /></span>Конфиденциальность<ChevronRight className="push" size={18} /></button><button className="setting" onClick={() => onOpenUtility('help')}><span><HelpCircle /></span>Помощь и поддержка<ChevronRight className="push" size={18} /></button></div>}</section>; }
 function ProfileDetail({ profile, onClose, onLike, onMessage }: { profile: Profile; onClose: () => void; onLike: () => void; onMessage: () => void }) { return <div className="profile-modal" onClick={onClose}><article onClick={event => event.stopPropagation()}><button className="modal-close" onClick={onClose}>×</button><img src={profile.image} alt={profile.name} /><div className="modal-copy"><p className="eyebrow">ПРОФИЛЬ</p><h2>{profile.name}, {profile.age}</h2><p><MapPin size={14} /> {profile.city}</p><p className="modal-bio">{profile.bio}</p><button className="primary wide" onClick={onLike}><Heart size={18} fill="currentColor" /> Нравится</button><button className="secondary wide" onClick={onMessage}><MessageCircle size={18} /> Написать</button></div></article></div>; }

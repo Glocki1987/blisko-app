@@ -35,6 +35,7 @@ create table if not exists public.blisko_notifications (
   type text not null,
   title text not null,
   body text not null,
+  related_id text,
   created_at timestamptz not null default now()
 );
 
@@ -50,3 +51,4 @@ create index if not exists blisko_notifications_user_created_idx
 
 alter table public.blisko_profiles add column if not exists gender text not null default 'female';
 alter table public.blisko_profiles add column if not exists interested_in text not null default 'all';
+alter table public.blisko_notifications add column if not exists related_id text;
