@@ -14,6 +14,7 @@ const messages = new Map();
 const notifications = new Map();
 let supabase = null;
 let supabaseReady = false;
+const conversationKey = (firstId, secondId) => [Number(firstId), Number(secondId)].sort((a, b) => a - b).join(':');
 function supabaseClient() {
   if (supabase) return supabase;
   const url = process.env.SUPABASE_URL;
@@ -47,9 +48,9 @@ async function loadSupabaseDatabase() {
   for (const profile of profileRows) userProfiles.set(String(profile.id), { ...profile, id: Number(profile.id), tags: Array.isArray(profile.tags) ? profile.tags : [], gender: profile.gender || 'female', interestedIn: profile.interested_in || 'all', updated_at: undefined });
   for (const row of stateRows) userState.set(String(row.user_id), { likes: new Set(row.likes || []), skips: new Set(row.skips || []) });
   for (const row of messageRows) {
-    const key = `${row.user_id}:${row.profile_id}`;
+    const key = conversationKey(row.user_id, row.profile_id);
     if (!messages.has(key)) messages.set(key, []);
-    messages.get(key).push({ id: row.id, sender: row.sender, text: row.text, createdAt: row.created_at });
+    messages.get(key).push({ id: row.id, senderId: String(/^\d+$/.test(String(row.sender)) ? row.sender : row.user_id), text: row.text, createdAt: row.created_at });
   }
   for (const row of notificationRows) {
     const key = String(row.user_id);
@@ -72,7 +73,7 @@ async function remoteNotification(userId, notification) {
 }
 async function remoteMessage(userId, profileId, message) {
   if (!supabaseReady) return;
-  await remoteUpsert('blisko_messages', { id: message.id, user_id: String(userId), profile_id: String(profileId), sender: message.sender, text: message.text, created_at: message.createdAt });
+  await remoteUpsert('blisko_messages', { id: message.id, user_id: String(userId), profile_id: String(profileId), sender: message.senderId, text: message.text, created_at: message.createdAt });
 }
 async function loadDatabase() {
   try {
@@ -133,13 +134,13 @@ function conversationsFor(user) {
   const state = stateFor(user);
   const likedIds = [...state.likes].map(Number);
   const messageIds = [...messages.keys()]
-    .filter((key) => key.startsWith(`${user.id}:`))
-    .map((key) => Number(key.split(':')[1]));
+    .filter((key) => key.split(':').includes(String(user.id)))
+    .map((key) => key.split(':').map(Number).find((id) => id !== Number(user.id)));
   const ids = [...new Set([...likedIds, ...messageIds])];
   return ids.map((id) => {
     const p = [...profiles, ...userProfiles.values()].find((profile) => profile.id === Number(id));
     if (!p) return null;
-    return { id: Number(id), profileId: p.id, name: p.name, avatar: p.image, last: (messages.get(`${user.id}:${id}`) || []).at(-1)?.text || 'Начните общение', time: 'сейчас', unread: 0, online: p.online };
+    return { id: Number(id), profileId: p.id, name: p.name, avatar: p.image, last: (messages.get(conversationKey(user.id, id)) || []).at(-1)?.text || 'Начните общение', time: 'сейчас', unread: 0, online: p.online };
   });
 }
 function allProfiles() {
@@ -224,9 +225,9 @@ async function handle(request, response) {
   const match = url.pathname.match(/^\/api\/conversations\/(\d+)\/messages$/);
   if (match) {
     const id = Number(match[1]); if (!state.likes.has(id)) return json(response, 404, { error: 'Conversation not found' });
-    const key = `${user.id}:${id}`; if (!messages.has(key)) messages.set(key, []);
-    if (request.method === 'GET') return json(response, 200, { messages: messages.get(key) });
-    if (request.method === 'POST') { const payload = await body(request); if (!payload?.text?.trim()) return json(response, 400, { error: 'Message text is required' }); const message = { id: randomUUID(), sender: 'me', text: payload.text.trim(), createdAt: new Date().toISOString() }; messages.get(key).push(message); await saveDatabase(); await remoteMessage(user.id, id, message); return json(response, 201, { message }); }
+    const key = conversationKey(user.id, id); if (!messages.has(key)) messages.set(key, []);
+    if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
+    if (request.method === 'POST') { const payload = await body(request); if (!payload?.text?.trim()) return json(response, 400, { error: 'Message text is required' }); const message = { id: randomUUID(), senderId: String(user.id), text: payload.text.trim(), createdAt: new Date().toISOString() }; messages.get(key).push(message); await saveDatabase(); await remoteMessage(user.id, id, message); return json(response, 201, { message: { ...message, sender: 'me' } }); }
   }
   return json(response, 404, { error: 'Not found' });
 }
