@@ -6,7 +6,7 @@ import { telegram } from './telegram';
 type Tab = 'discover' | 'likes' | 'messages' | 'profile';
 type Message = { id: string; sender: 'me' | 'them'; text: string; createdAt: string };
 type Notification = { id: string; title: string; body: string; createdAt: string };
-const apiBase = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const apiBase = (import.meta.env.VITE_API_URL || 'https://blisko-app.onrender.com').replace(/\/$/, '');
 const api = async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
   const headers = new Headers(options.headers);
   headers.set('content-type', 'application/json');
