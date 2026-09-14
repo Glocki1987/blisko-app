@@ -48,7 +48,6 @@ function App() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [matchNotice, setMatchNotice] = useState<Profile | null>(null);
-  const [likeCount, setLikeCount] = useState(0);
   const [randomMatch, setRandomMatch] = useState<RandomMatch | null>(null);
   const [randomLoading, setRandomLoading] = useState(false);
   const [randomError, setRandomError] = useState('');
@@ -145,10 +144,8 @@ function App() {
     if (action === 'like') setLiked(items => items.includes(id) ? items : [...items, id]);
     try {
       const result = await api<{ matched?: boolean }>(action === 'like' ? '/api/likes' : '/api/discover/skip', json({ profileId: id }));
-      const forcedMatch = action === 'like' && (likeCount + 1) % 3 === 0;
-      if (action === 'like') setLikeCount(count => count + 1);
       await refresh();
-      return Boolean(result.matched) || forcedMatch;
+      return Boolean(result.matched);
     } catch (error) {
       console.error('Действие не сохранено', error);
       return false;
@@ -241,7 +238,7 @@ function Discover({ profile, onOpen, onLike, onSkip }: { profile: Profile; onOpe
   const start = useRef(0);
   const finishDrag = (value: number) => { setDragging(false); if (Math.abs(value) > 90) { value > 0 ? onLike() : onSkip(); } else setOffset(0); };
   const mode = datingModes.find(item => item.value === profile.datingMode) || datingModes[2];
-  return <section className="discover"><div className="section-heading"><div><p className="eyebrow">DISCOVER / 01</p><h2>Кто рядом</h2><p className="location-label"><MapPin size={13} /> {profile.city}</p></div><button className="filter" onClick={onOpen}><SlidersHorizontal size={18} /></button></div><div className="card-wrap"><article className={`profile-card swipe-card ${dragging ? 'is-dragging' : ''}`} style={{ transform: `translateX(${offset}px) rotate(${offset / 18}deg)` }} onPointerDown={event => { start.current = event.clientX; setDragging(true); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={event => { if (dragging) setOffset(event.clientX - start.current); }} onPointerUp={() => finishDrag(offset)} onClick={event => { if (Math.abs(offset) < 8) onOpen(); }}><div className={`swipe-signal ${offset > 20 ? 'positive' : offset < -20 ? 'negative' : ''}`}>{offset > 20 ? 'LIKE' : offset < -20 ? 'PASS' : ''}</div><img src={profile.image} alt={profile.name} /><div className="shade" /><div className="online-dot" /><div className="card-info"><div className="card-name"><h2>{profile.name}, {profile.age}</h2><span><Check size={14} /></span></div><p><MapPin size={14} /> {profile.distance || profile.city}</p><span className="mode-badge">{mode.icon} {mode.label}</span><p className="bio">{profile.bio}</p><div className="tags">{profile.tags.map(tag => <span key={tag}>#{tag}</span>)}<span className="ai-score"><Zap size={11} /> 94% match</span></div></div></article></div><div className="actions"><button className="round-btn utility" onClick={() => setOffset(0)}><RotateCcw /></button><button className="round-btn skip" onClick={onSkip}><X /></button><button className="round-btn like" onClick={onLike}><Heart fill="currentColor" /></button><button className="round-btn utility" onClick={onLike}><Zap /></button></div></section>;
+  return <section className="discover"><div className="section-heading"><div><p className="eyebrow">DISCOVER / 01</p><h2>Кто рядом</h2><p className="location-label"><MapPin size={13} /> {profile.city}</p></div><button className="filter" onClick={onOpen}><SlidersHorizontal size={18} /></button></div><div className="card-wrap"><article className={`profile-card swipe-card ${dragging ? 'is-dragging' : ''}`} style={{ transform: `translateX(${offset}px) rotate(${offset / 18}deg)` }} onPointerDown={event => { start.current = event.clientX; setDragging(true); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={event => { if (dragging) setOffset(event.clientX - start.current); }} onPointerUp={() => finishDrag(offset)} onClick={event => { if (Math.abs(offset) < 8) onOpen(); }}><div className={`swipe-signal ${offset > 20 ? 'positive' : offset < -20 ? 'negative' : ''}`}>{offset > 20 ? 'LIKE' : offset < -20 ? 'PASS' : ''}</div><img src={profile.image} alt={profile.name} /><div className="shade" /><div className="online-dot" /><div className="card-info"><div className="card-name"><h2>{profile.name}, {profile.age}</h2><span><Check size={14} /></span></div><p><MapPin size={14} /> {profile.distance || profile.city}</p><span className="mode-badge">{mode.icon} {mode.label}</span><p className="bio">{profile.bio}</p><div className="tags">{profile.tags.map(tag => <span key={tag}>#{tag}</span>)}</div></div></article></div><div className="actions"><button className="round-btn utility" onClick={() => setOffset(0)}><RotateCcw /></button><button className="round-btn skip" onClick={onSkip}><X /></button><button className="round-btn like" onClick={onLike}><Heart fill="currentColor" /></button><button className="round-btn utility" onClick={onLike}><Zap /></button></div></section>;
 }
 
 function Likes({ matches, onOpen, onOpenChat }: { matches: Profile[]; onOpen: () => void; onOpenChat: (id: number) => void }) {

@@ -94,7 +94,13 @@ while (true) {
       await handle(update);
     }
   } catch (error) {
-    console.error(error instanceof Error ? error.message : error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    if (/unauthorized|401/i.test(message)) {
+      console.error('Telegram token is invalid. Stop the bot and update TELEGRAM_BOT_TOKEN in .env.');
+      process.exitCode = 1;
+      break;
+    }
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
