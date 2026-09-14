@@ -236,20 +236,20 @@ function limited(userId, action, maxRequests, windowMs) {
     requestWindows.set(key, recent);
     return true;
   }
-  function limitedAuth(request) {
-    const address = request.socket.remoteAddress || 'unknown';
-    const now = Date.now();
-    const recent = (authWindows.get(address) || []).filter((timestamp) => now - timestamp < AUTH_RATE_WINDOW_MS);
-    if (recent.length >= AUTH_RATE_LIMIT) {
-      authWindows.set(address, recent);
-      return true;
-    }
-    recent.push(now);
-    authWindows.set(address, recent);
-    return false;
-  }
   recent.push(now);
   requestWindows.set(key, recent);
+  return false;
+}
+function limitedAuth(request) {
+  const address = request.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const recent = (authWindows.get(address) || []).filter((timestamp) => now - timestamp < AUTH_RATE_WINDOW_MS);
+  if (recent.length >= AUTH_RATE_LIMIT) {
+    authWindows.set(address, recent);
+    return true;
+  }
+  recent.push(now);
+  authWindows.set(address, recent);
   return false;
 }
 function validateInitData(initData) {
