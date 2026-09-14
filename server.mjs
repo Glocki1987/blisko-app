@@ -263,7 +263,9 @@ async function handle(request, response) {
   if (request.method === 'GET' && url.pathname === '/api/conversations') return json(response, 200, { conversations: conversationsFor(user) });
   const match = url.pathname.match(/^\/api\/conversations\/(\d+)\/messages$/);
   if (match) {
-    const id = Number(match[1]); if (!state.likes.has(id)) return json(response, 404, { error: 'Conversation not found' });
+    const id = Number(match[1]);
+    const canChat = id === testProfile.id || state.likes.has(id);
+    if (!canChat) return json(response, 404, { error: 'Conversation not found' });
     const key = conversationKey(user.id, id); if (!messages.has(key)) messages.set(key, []);
     if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
     if (request.method === 'POST') { const payload = await body(request); if (!payload?.text?.trim()) return json(response, 400, { error: 'Message text is required' }); const message = { id: randomUUID(), senderId: String(user.id), text: payload.text.trim(), createdAt: new Date().toISOString() }; messages.get(key).push(message); await saveDatabase(); await remoteMessage(user.id, id, message); return json(response, 201, { message: { ...message, sender: 'me' } }); }
