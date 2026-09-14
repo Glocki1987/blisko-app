@@ -131,6 +131,14 @@ async function body(request) {
   let raw = ''; for await (const chunk of request) raw += chunk;
   if (!raw) return {}; try { return JSON.parse(raw); } catch { return null; }
 }
+async function telegramBotInfo() {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return { configured: false };
+  const result = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+  const payload = await result.json();
+  if (!payload.ok) return { configured: true, valid: false };
+  return { configured: true, valid: true, id: payload.result.id, username: payload.result.username };
+}
 function conversationsFor(user) {
   const state = stateFor(user);
   const likedIds = [...state.likes].map(Number);
@@ -167,6 +175,9 @@ async function handle(request, response) {
   if (request.method === 'OPTIONS') return json(response, 204, {});
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
   if (request.method === 'GET' && url.pathname === '/api/health') return json(response, 200, { ok: true, service: 'blisko-api' });
+  if (request.method === 'GET' && url.pathname === '/api/telegram/status') {
+    try { return json(response, 200, await telegramBotInfo()); } catch { return json(response, 503, { configured: true, valid: false }); }
+  }
   if (request.method === 'POST' && url.pathname === '/api/auth/telegram') {
     const payload = await body(request); if (payload === null) return json(response, 400, { error: 'Invalid JSON' });
     if (typeof payload.initData !== 'string' || !payload.initData) return json(response, 401, { error: 'Telegram initData is required' });
