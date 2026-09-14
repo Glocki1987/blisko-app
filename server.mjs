@@ -14,6 +14,7 @@ const userState = new Map();
 const messages = new Map();
 const notifications = new Map();
 const randomRooms = new Map();
+const requestWindows = new Map();
 let supabase = null;
 let supabaseReady = false;
 const conversationKey = (firstId, secondId) => [Number(firstId), Number(secondId)].sort((a, b) => a - b).join(':');
@@ -176,8 +177,20 @@ async function loadDotEnv() {
   } catch { /* optional */ }
 }
 function json(response, status, body) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS' });
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
   response.end(JSON.stringify(body));
+}
+function limited(userId, action, maxRequests, windowMs) {
+  const key = `${userId}:${action}`;
+  const now = Date.now();
+  const recent = (requestWindows.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+  if (recent.length >= maxRequests) {
+    requestWindows.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  requestWindows.set(key, recent);
+  return false;
 }
 function validateInitData(initData) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -204,7 +217,10 @@ function userFromRequest(request) {
   return session;
 }
 async function body(request) {
-  let raw = ''; for await (const chunk of request) raw += chunk;
+  let raw = ''; for await (const chunk of request) {
+    raw += chunk;
+    if (raw.length > 1_000_000) return null;
+  }
   if (!raw) return {}; try { return JSON.parse(raw); } catch { return null; }
 }
 async function telegramBotInfo() {
@@ -300,6 +316,7 @@ async function handle(request, response) {
     return json(response, 200, { loggedOut: true });
   }
   const user = userFromRequest(request); if (!user) return json(response, 401, { error: 'Authentication required' });
+  if (limited(user.id, `${request.method}:${url.pathname}`, 60, 60_000)) return json(response, 429, { error: 'Too many requests. Try again shortly.' });
   const state = stateFor(user);
   const userNotifications = notifications.get(String(user.id)) || [];
   notifications.set(String(user.id), userNotifications);
@@ -356,13 +373,17 @@ async function handle(request, response) {
     randomRooms.set(String(user.id), Number(candidate.id));
     return json(response, 200, { match: { id: Number(candidate.id), city: candidate.city || 'Город не указан', online: isRecentlyActive(candidate) } });
   }
-  if (request.method === 'POST' && url.pathname === '/api/discover/skip') { const id = Number((await body(request))?.profileId); state.skips.add(id); await saveDatabase(); await remoteState(user.id, state); return json(response, 200, { skipped: true, profileId: id }); }
+  if (request.method === 'POST' && url.pathname === '/api/discover/skip') {
+    const id = Number((await body(request))?.profileId);
+    if (!Number.isSafeInteger(id) || id <= 0 || id === Number(user.id) || !profileById(id)) return json(response, 400, { error: 'Invalid profileId' });
+    state.skips.add(id); await saveDatabase(); await remoteState(user.id, state); return json(response, 200, { skipped: true, profileId: id });
+  }
   if (request.method === 'GET' && url.pathname === '/api/likes') return json(response, 200, { likes: [...state.likes].map(Number), profiles: allProfiles().filter((p) => state.likes.has(p.id)) });
   if (request.method === 'GET' && url.pathname === '/api/notifications') return json(response, 200, { notifications: userNotifications });
   if (request.method === 'POST' && url.pathname === '/api/likes') {
     const id = Number((await body(request))?.profileId);
     const target = profileById(id);
-    if (!target) return json(response, 400, { error: 'Unknown profileId' });
+    if (!Number.isSafeInteger(id) || id <= 0 || id === Number(user.id) || !target) return json(response, 400, { error: 'Invalid profileId' });
     state.likes.add(id);
     const now = new Date().toISOString();
     const ownNotification = { id: randomUUID(), type: 'like', title: 'Лайк сохранён', body: 'Профиль добавлен в твои лайки', relatedId: String(id), createdAt: now };
@@ -394,7 +415,8 @@ async function handle(request, response) {
     if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
     if (request.method === 'POST') {
       const payload = await body(request);
-      if (!payload?.text?.trim()) return json(response, 400, { error: 'Message text is required' });
+      if (typeof payload?.text !== 'string' || !payload.text.trim()) return json(response, 400, { error: 'Message text is required' });
+      if (payload.text.trim().length > 2000) return json(response, 400, { error: 'Message is too long' });
       const message = { id: randomUUID(), senderId: String(user.id), text: payload.text.trim(), createdAt: new Date().toISOString() };
       messages.get(key).push(message);
       await saveDatabase();
