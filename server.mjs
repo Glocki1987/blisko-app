@@ -5,6 +5,7 @@ import { URL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 
 const PORT = Number(process.env.PORT || 8787);
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const dbFile = new URL('./blisko.local.json', import.meta.url);
 const demoProfileIds = new Set(['900000001', '987654']);
 const sessions = new Map();
@@ -159,7 +160,11 @@ const stateFor = (user) => {
   if (!userState.has(key)) userState.set(key, { likes: new Set(), skips: new Set() });
   return userState.get(key);
 };
-const profileFor = (user) => userProfiles.get(String(user.id));
+function profileFor(user) {
+  const profile = userProfiles.get(String(user.id));
+  if (!profile || !Number.isInteger(Number(profile.age)) || Number(profile.age) < 18 || Number(profile.age) > 100) return undefined;
+  return profile;
+}
 
 async function loadDotEnv() {
   try {
@@ -171,7 +176,7 @@ async function loadDotEnv() {
   } catch { /* optional */ }
 }
 function json(response, status, body) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'GET,PUT,POST,OPTIONS' });
+  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS' });
   response.end(JSON.stringify(body));
 }
 function validateInitData(initData) {
@@ -187,7 +192,17 @@ function validateInitData(initData) {
   if (Math.abs(Date.now() / 1000 - Number(params.get('auth_date'))) > 86400) return null;
   try { return JSON.parse(params.get('user') || '{}'); } catch { return null; }
 }
-const userFromRequest = (request) => sessions.get(request.headers.authorization?.replace(/^Bearer\s+/i, ''));
+function userFromRequest(request) {
+  const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return session;
+}
 async function body(request) {
   let raw = ''; for await (const chunk of request) raw += chunk;
   if (!raw) return {}; try { return JSON.parse(raw); } catch { return null; }
@@ -276,8 +291,13 @@ async function handle(request, response) {
       const storedProfile = await remoteProfileById(user.id);
       if (storedProfile) userProfiles.set(String(user.id), storedProfile);
     }
-    const accessToken = randomUUID(); sessions.set(accessToken, { id: user.id, first_name: user.first_name || 'Пользователь', username: user.username });
+    const accessToken = randomUUID(); sessions.set(accessToken, { id: user.id, first_name: user.first_name || 'Пользователь', username: user.username, expiresAt: Date.now() + SESSION_TTL_MS });
     return json(response, 200, { accessToken, user, profile: profileFor(user) || null });
+  }
+  if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (token) sessions.delete(token);
+    return json(response, 200, { loggedOut: true });
   }
   const user = userFromRequest(request); if (!user) return json(response, 401, { error: 'Authentication required' });
   const state = stateFor(user);
@@ -296,8 +316,10 @@ async function handle(request, response) {
   if (url.pathname === '/api/profile' && request.method === 'GET') return json(response, 200, { profile: profileFor(user) || { id: user.id, name: user.first_name || '', age: 18, city: '', distance: '', bio: '', tags: [], image: '', gender: 'female', interestedIn: 'all', datingMode: 'friends' } });
   if (url.pathname === '/api/profile' && ['POST', 'PUT'].includes(request.method)) {
     const payload = await body(request); if (!payload?.name?.trim()) return json(response, 400, { error: 'Name is required' });
+    const age = Number(payload.age);
+    if (!Number.isInteger(age) || age < 18 || age > 100) return json(response, 400, { error: 'Age must be between 18 and 100' });
     const modes = ['hot', 'quick', 'friends', 'relationship', 'casual', 'company'];
-    const profile = { id: user.id, name: payload.name.trim(), age: Number(payload.age) || 18, city: typeof payload.city === 'string' ? payload.city.trim() : '', distance: 'рядом с вами', bio: typeof payload.bio === 'string' ? payload.bio.trim() : '', tags: Array.isArray(payload.tags) ? payload.tags.map(String).filter(Boolean).slice(0, 15) : [], image: typeof payload.image === 'string' ? payload.image : '', gender: payload.gender === 'male' ? 'male' : 'female', interestedIn: ['male', 'female', 'all'].includes(payload.interestedIn) ? payload.interestedIn : 'all', datingMode: modes.includes(payload.datingMode) ? payload.datingMode : 'friends', online: true, updated_at: new Date().toISOString() };
+    const profile = { id: user.id, name: payload.name.trim(), age, city: typeof payload.city === 'string' ? payload.city.trim() : '', distance: 'рядом с вами', bio: typeof payload.bio === 'string' ? payload.bio.trim() : '', tags: Array.isArray(payload.tags) ? payload.tags.map(String).filter(Boolean).slice(0, 15) : [], image: typeof payload.image === 'string' ? payload.image : '', gender: payload.gender === 'male' ? 'male' : 'female', interestedIn: ['male', 'female', 'all'].includes(payload.interestedIn) ? payload.interestedIn : 'all', datingMode: modes.includes(payload.datingMode) ? payload.datingMode : 'friends', online: true, updated_at: new Date().toISOString() };
     userProfiles.set(String(user.id), profile); await saveDatabase(); await remoteProfile(profile); return json(response, 200, { profile });
   }
   if (url.pathname === '/api/profile' && request.method === 'DELETE') {
