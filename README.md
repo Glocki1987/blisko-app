@@ -1,6 +1,6 @@
 # BLISKO Telegram Mini App
 
-Мобильный MVP приложения знакомств для Telegram Mini Apps: онбординг, лента анкет, лайки и мэтчи, сообщения, профиль и настройки. Сейчас используется локальное демо-состояние — backend можно подключить через `VITE_API_URL`.
+Мобильное приложение знакомств для Telegram Mini Apps: онбординг, лента анкет, лайки и мэтчи, сообщения, профиль и настройки. Backend подключается через `VITE_API_URL`, а данные хранятся локально или в Supabase.
 
 ## Запуск
 
@@ -17,12 +17,12 @@ npm run dev
 npm run server
 ```
 
-Он использует demo-данные в памяти и слушает `http://127.0.0.1:8787` (или `PORT`).
+Он слушает `http://127.0.0.1:8787` (или `PORT`) и не создаёт тестовые анкеты, фотографии или чаты.
 Доступны `GET /api/health`, `POST /api/auth/telegram`, `GET /api/discover`,
 `/api/likes`, `/api/matches`, `/api/conversations` и
 `/api/conversations/:id/messages`. Для защищённых запросов передавайте Bearer-токен,
 возвращённый auth endpoint. `initData` Telegram проверяется на сервере; без него
-auth endpoint выдаёт demo-сессию для локальной разработки.
+auth endpoint принимает только действительный Telegram `initData`.
 
 ## Telegram
 
