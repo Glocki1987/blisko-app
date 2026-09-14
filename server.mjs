@@ -6,22 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const PORT = Number(process.env.PORT || 8787);
 const dbFile = new URL('./blisko.local.json', import.meta.url);
-const testProfile = {
-  id: 900000001,
-  name: 'София',
-  age: 26,
-  city: 'Warszawa',
-  distance: 'рядом с вами',
-  bio: 'Тестовый профиль BLISKO для проверки ленты, лайков и чата.',
-  tags: ['кофе', 'путешествия', 'музыка'],
-  image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800&q=85',
-  gender: 'female',
-  interestedIn: 'all',
-  datingMode: 'friends',
-  online: true,
-  updated_at: new Date().toISOString(),
-};
-const profiles = [testProfile];
+const demoProfileIds = new Set(['900000001', '987654']);
 const sessions = new Map();
 const userProfiles = new Map();
 const userState = new Map();
@@ -111,6 +96,19 @@ async function remoteDeleteProfile(userId) {
   }
   const { error: relatedMessagesError } = await client.from('blisko_messages').delete().eq('profile_id', String(userId));
   if (relatedMessagesError) throw new Error(`Supabase blisko_messages: ${relatedMessagesError.message}`);
+}
+async function removeDemoData() {
+  const demoIds = [...demoProfileIds];
+  for (const id of demoIds) {
+    userProfiles.delete(id);
+    userState.delete(id);
+    notifications.delete(id);
+  }
+  for (const key of [...messages.keys()]) {
+    if (demoIds.some((id) => key.split(':').includes(id))) messages.delete(key);
+  }
+  if (!supabaseClient()) return;
+  for (const id of demoIds) await remoteDeleteProfile(id);
 }
 async function remoteState(userId, state) {
   if (!supabaseClient()) return;
@@ -214,16 +212,16 @@ function conversationsFor(user) {
   const messageIds = [...messages.keys()]
     .filter((key) => key.split(':').includes(String(user.id)))
     .map((key) => key.split(':').map(Number).find((id) => id !== Number(user.id)));
-  const ids = [...new Set([testProfile.id, ...likedIds, ...messageIds])];
+  const ids = [...new Set([...likedIds, ...messageIds])];
   return ids.map((id) => {
-    const p = [...profiles, ...userProfiles.values()].find((profile) => profile.id === Number(id));
+    const p = allProfiles().find((profile) => profile.id === Number(id));
     if (!p) return null;
     return { id: Number(id), profileId: p.id, name: p.name, avatar: p.image, last: (messages.get(conversationKey(user.id, id)) || []).at(-1)?.text || 'Начните общение', time: 'сейчас', unread: 0, online: isRecentlyActive(p) };
   });
 }
 function allProfiles() {
   const unique = new Map();
-  for (const profile of [...profiles, ...userProfiles.values()]) unique.set(String(profile.id), profile);
+  for (const profile of userProfiles.values()) unique.set(String(profile.id), profile);
   return [...unique.values()];
 }
 const isRecentlyActive = (profile) => {
@@ -280,7 +278,7 @@ async function handle(request, response) {
     await remoteProfile(profile);
     return json(response, 200, { online: true });
   }
-  if (url.pathname === '/api/profile' && request.method === 'GET') return json(response, 200, { profile: profileFor(user) || { id: user.id, name: user.first_name, age: 27, city: 'Москва', bio: '', tags: [], image: '' } });
+  if (url.pathname === '/api/profile' && request.method === 'GET') return json(response, 200, { profile: profileFor(user) || { id: user.id, name: user.first_name || '', age: 18, city: '', distance: '', bio: '', tags: [], image: '', gender: 'female', interestedIn: 'all', datingMode: 'friends' } });
   if (url.pathname === '/api/profile' && ['POST', 'PUT'].includes(request.method)) {
     const payload = await body(request); if (!payload?.name?.trim()) return json(response, 400, { error: 'Name is required' });
     const modes = ['hot', 'quick', 'friends', 'relationship', 'casual', 'company'];
@@ -300,11 +298,10 @@ async function handle(request, response) {
   if (request.method === 'GET' && (url.pathname === '/api/discover' || url.pathname === '/api/profiles')) {
     const ownCity = profileFor(user)?.city;
     const nearby = new Set(['Warszawa', 'Nowy Dwór Mazowiecki']);
-    const visible = [...profiles, ...userProfiles.values()].filter((p) => {
+    const visible = [...userProfiles.values()].filter((p) => {
       const sameArea = !ownCity || !p.city || p.city === ownCity || (nearby.has(ownCity) && nearby.has(p.city));
       const genderMatches = !profileFor(user)?.interestedIn || profileFor(user).interestedIn === 'all' || p.gender === profileFor(user).interestedIn;
-      const isTestProfile = Number(p.id) === testProfile.id;
-      return Number(p.id) !== Number(user.id) && (isTestProfile || (sameArea && genderMatches)) && !state.skips.has(p.id) && !state.likes.has(p.id);
+      return Number(p.id) !== Number(user.id) && sameArea && genderMatches && !state.skips.has(p.id) && !state.likes.has(p.id);
     });
     return json(response, 200, { profiles: visible.map((profile) => ({ ...profile, online: isRecentlyActive(profile) })) });
   }
@@ -351,7 +348,7 @@ async function handle(request, response) {
   const match = url.pathname.match(/^\/api\/conversations\/(\d+)\/messages$/);
   if (match) {
     const id = Number(match[1]);
-    const canChat = id === testProfile.id || state.likes.has(id) || randomRooms.get(String(user.id)) === id;
+    const canChat = state.likes.has(id) || randomRooms.get(String(user.id)) === id;
     if (!canChat) return json(response, 404, { error: 'Conversation not found' });
     const key = conversationKey(user.id, id); if (!messages.has(key)) messages.set(key, []);
     if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
@@ -372,4 +369,5 @@ async function handle(request, response) {
 await loadDotEnv();
 await loadDatabase();
 try { await loadSupabaseDatabase(); } catch (error) { console.warn(`Supabase unavailable, using local persistence: ${error.message}`); }
+try { await removeDemoData(); await saveDatabase(); } catch (error) { console.warn(`Demo data cleanup unavailable: ${error.message}`); }
 http.createServer((request, response) => handle(request, response).catch((error) => { console.error(error); json(response, 500, { error: 'Internal server error' }); })).listen(PORT, '0.0.0.0');

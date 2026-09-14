@@ -54,3 +54,9 @@ alter table public.blisko_profiles add column if not exists gender text not null
 alter table public.blisko_profiles add column if not exists interested_in text not null default 'all';
 alter table public.blisko_profiles add column if not exists dating_mode text not null default 'friends';
 alter table public.blisko_notifications add column if not exists related_id text;
+
+-- Remove legacy demo profiles and their related test data.
+delete from public.blisko_messages where user_id in ('900000001', '987654') or profile_id in ('900000001', '987654');
+delete from public.blisko_user_state where user_id in ('900000001', '987654');
+delete from public.blisko_notifications where user_id in ('900000001', '987654');
+delete from public.blisko_profiles where id in ('900000001', '987654');
