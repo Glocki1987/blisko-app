@@ -59,13 +59,14 @@ function App() {
       const auth = await api<{ accessToken: string; profile: Profile | null }>('/api/auth/telegram', json({ initData: telegram.initData }));
       localStorage.setItem('blisko-token', auth.accessToken);
       setOnline(true);
-      if (!auth.profile) {
+      const stored = auth.profile || (await api<{ profile: Profile | null }>('/api/profile')).profile;
+      if (!stored) {
         setProfile({ ...initialProfile, id: telegram.user.id });
         setOnboarded(false);
         localStorage.removeItem('blisko-onboarded');
         return;
       }
-      setProfile({ ...initialProfile, ...auth.profile, datingMode: auth.profile?.datingMode || 'friends', tags: Array.isArray(auth.profile?.tags) ? auth.profile.tags : [] });
+      setProfile({ ...initialProfile, ...stored, datingMode: stored.datingMode || 'friends', tags: Array.isArray(stored.tags) ? stored.tags : [] });
       setOnboarded(true);
       localStorage.setItem('blisko-onboarded', '1');
       const [feed, likes, matchData, conversationData, noteData] = await Promise.all([

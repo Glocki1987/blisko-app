@@ -381,14 +381,6 @@ async function handle(request, response) {
     if (typeof payload.initData !== 'string' || !payload.initData || payload.initData.length > 10_000) return json(response, 401, { error: 'Invalid Telegram initData' });
     const user = validateInitData(payload.initData || '');
     if (!user) return json(response, 401, { error: 'Invalid Telegram initData' });
-    try {
-      if (!profileFor(user) && supabaseClient()) {
-        const storedProfile = await remoteProfileById(user.id);
-        if (storedProfile) userProfiles.set(String(user.id), storedProfile);
-      }
-    } catch (error) {
-      console.warn(`Supabase profile lookup unavailable during auth: ${error instanceof Error ? error.message : String(error)}`);
-    }
     const accessToken = randomUUID();
     const now = Date.now();
     const userSessions = [...sessions.entries()].filter(([, session]) => String(session.id) === String(user.id)).sort(([, first], [, second]) => (first.createdAt || 0) - (second.createdAt || 0));
@@ -419,7 +411,18 @@ async function handle(request, response) {
     await remoteProfile(profile);
     return json(response, 200, { online: true });
   }
-  if (url.pathname === '/api/profile' && request.method === 'GET') return json(response, 200, { profile: profileFor(user) || { id: user.id, name: user.first_name || '', age: 18, city: '', distance: '', bio: '', tags: [], image: '', gender: 'female', interestedIn: 'all', datingMode: 'friends' } });
+  if (url.pathname === '/api/profile' && request.method === 'GET') {
+    let profile = profileFor(user);
+    if (!profile && supabaseClient()) {
+      try {
+        profile = await remoteProfileById(user.id);
+        if (profile) userProfiles.set(String(user.id), profile);
+      } catch (error) {
+        console.warn(`Supabase profile lookup unavailable: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return json(response, 200, { profile: profile || { id: user.id, name: user.first_name || '', age: 18, city: '', distance: '', bio: '', tags: [], image: '', gender: 'female', interestedIn: 'all', datingMode: 'friends' } });
+  }
   if (url.pathname === '/api/profile' && ['POST', 'PUT'].includes(request.method)) {
     const payload = await body(request); if (!payload?.name?.trim()) return json(response, 400, { error: 'Name is required' });
     if (payload.name.trim().length > 80) return json(response, 400, { error: 'Name is too long' });
