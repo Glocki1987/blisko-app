@@ -178,8 +178,24 @@ async function loadDotEnv() {
     }
   } catch { /* optional */ }
 }
+function allowedOrigins() {
+  return new Set([
+    process.env.WEB_APP_ORIGIN,
+    process.env.TELEGRAM_WEBAPP_URL,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:4173',
+    'http://127.0.0.1:4173',
+  ].filter(Boolean));
+}
 function json(response, status, body) {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' });
+  const origin = response.getHeader('access-control-allow-origin');
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' };
+  if (origin) {
+    headers['access-control-allow-origin'] = origin;
+    headers.vary = 'Origin';
+  }
+  response.writeHead(status, headers);
   response.end(JSON.stringify(body));
 }
 function limited(userId, action, maxRequests, windowMs) {
@@ -260,10 +276,11 @@ async function notifyTelegramMessage(chatId, senderName, text) {
 }
 function conversationsFor(user) {
   const state = stateFor(user);
-  const likedIds = [...state.likes].map(Number);
+  const likedIds = [...state.likes].map(Number).filter((id) => stateFor({ id }).likes.has(Number(user.id)));
   const messageIds = [...messages.keys()]
     .filter((key) => key.split(':').includes(String(user.id)))
-    .map((key) => key.split(':').map(Number).find((id) => id !== Number(user.id)));
+    .map((key) => key.split(':').map(Number).find((id) => id !== Number(user.id)))
+    .filter((id) => state.likes.has(id) && stateFor({ id }).likes.has(Number(user.id)));
   const ids = [...new Set([...likedIds, ...messageIds])];
   return ids.map((id) => {
     const p = allProfiles().find((profile) => profile.id === Number(id));
@@ -298,6 +315,8 @@ async function addNotification(userId, notification) {
   await remoteNotification(userId, notification);
 }
 async function handle(request, response) {
+  const requestOrigin = request.headers.origin;
+  if (requestOrigin && allowedOrigins().has(requestOrigin)) response.setHeader('access-control-allow-origin', requestOrigin);
   if (request.method === 'OPTIONS') return json(response, 204, {});
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
   if (request.method === 'GET' && url.pathname === '/api/health') return json(response, 200, { ok: true, service: 'blisko-api' });
@@ -376,7 +395,9 @@ async function handle(request, response) {
     });
     if (!candidates.length) return json(response, 404, { error: 'Пока нет доступных собеседников' });
     const candidate = candidates[Math.floor(Math.random() * candidates.length)];
-    randomRooms.set(String(user.id), { id: Number(candidate.id), expiresAt: Date.now() + RANDOM_ROOM_TTL_MS });
+    const expiresAt = Date.now() + RANDOM_ROOM_TTL_MS;
+    randomRooms.set(String(user.id), { id: Number(candidate.id), expiresAt });
+    randomRooms.set(String(candidate.id), { id: Number(user.id), expiresAt });
     return json(response, 200, { match: { id: Number(candidate.id), city: candidate.city || 'Город не указан', online: isRecentlyActive(candidate) } });
   }
   if (request.method === 'POST' && url.pathname === '/api/discover/skip') {
@@ -418,7 +439,8 @@ async function handle(request, response) {
     const room = randomRooms.get(String(user.id));
     const randomChatAllowed = room && room.expiresAt > Date.now() && room.id === id;
     if (room && room.expiresAt <= Date.now()) randomRooms.delete(String(user.id));
-    const canChat = state.likes.has(id) || randomChatAllowed;
+    const mutualLike = state.likes.has(id) && stateFor({ id }).likes.has(Number(user.id));
+    const canChat = mutualLike || randomChatAllowed;
     if (!canChat) return json(response, 404, { error: 'Conversation not found' });
     const key = conversationKey(user.id, id); if (!messages.has(key)) messages.set(key, []);
     if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
