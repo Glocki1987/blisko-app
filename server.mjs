@@ -215,7 +215,7 @@ async function handle(request, response) {
   if (request.method === 'POST' && url.pathname === '/api/auth/telegram') {
     const payload = await body(request); if (payload === null) return json(response, 400, { error: 'Invalid JSON' });
     if (typeof payload.initData !== 'string' || !payload.initData) return json(response, 401, { error: 'Telegram initData is required' });
-    const user = payload.initData ? validateInitData(payload.initData) : { id: payload.userId || 1001, first_name: 'Алекс', username: 'demo' };
+    const user = validateInitData(payload.initData || '');
     if (!user) return json(response, 401, { error: 'Invalid Telegram initData' });
     if (!profileFor(user) && supabaseClient()) {
       const storedProfile = await remoteProfileById(user.id);
@@ -287,5 +287,5 @@ async function handle(request, response) {
 }
 await loadDotEnv();
 await loadDatabase();
-try { await loadSupabaseDatabase(); console.log('BLISKO Supabase persistence enabled'); } catch (error) { console.warn(`Supabase unavailable, using local persistence: ${error.message}`); }
-http.createServer((request, response) => handle(request, response).catch((error) => { console.error(error); json(response, 500, { error: 'Internal server error' }); })).listen(PORT, '0.0.0.0', () => console.log(`BLISKO API listening on http://127.0.0.1:${PORT}`));
+try { await loadSupabaseDatabase(); } catch (error) { console.warn(`Supabase unavailable, using local persistence: ${error.message}`); }
+http.createServer((request, response) => handle(request, response).catch((error) => { console.error(error); json(response, 500, { error: 'Internal server error' }); })).listen(PORT, '0.0.0.0');
