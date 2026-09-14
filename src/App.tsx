@@ -34,6 +34,7 @@ function App() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   const refresh = async () => {
@@ -74,6 +75,8 @@ function App() {
   };
   useEffect(() => { telegram.init(); refresh(); }, []);
   const saveProfile = async (next: Profile) => {
+    if (savingProfile) return;
+    setSavingProfile(true);
     try {
       const result = await api<{ profile: Profile }>('/api/profile', { ...json(next), method: 'PUT' });
       setProfile(result.profile);
@@ -83,6 +86,8 @@ function App() {
       await refresh();
     } catch (error) {
       console.error('Не удалось сохранить анкету', error);
+    } finally {
+      setSavingProfile(false);
     }
   };
   const act = async (id: number, action: 'like' | 'skip') => {
@@ -92,7 +97,7 @@ function App() {
   };
   if (loading) return <div className="loading-screen">Загружаем профиль…</div>;
   if (loadError) return <div className="loading-screen error-screen"><div><h2>Не удалось войти</h2><p>{loadError}</p><button className="primary" onClick={refresh}>Повторить</button></div></div>;
-  if (!onboarded) return <Onboarding profile={profile} onDone={saveProfile} />;
+  if (!onboarded) return <Onboarding profile={profile} onDone={saveProfile} saving={savingProfile} />;
   const current = discover[0];
   const activeChat = chats.find(chat => chat.id === selectedChat);
   return <div className="app-shell">
@@ -109,7 +114,7 @@ function App() {
   </div>;
 }
 
-function Onboarding({ profile, onDone }: { profile: Profile; onDone: (profile: Profile) => void }) {
+function Onboarding({ profile, onDone, saving }: { profile: Profile; onDone: (profile: Profile) => void; saving: boolean }) {
   const [form, setForm] = useState(profile);
   const [step, setStep] = useState(1);
   const setPhoto = (file?: File) => { if (!file || !file.type.startsWith('image/') || file.size > 5_000_000) return; const reader = new FileReader(); reader.onload = () => setForm({ ...form, image: String(reader.result) }); reader.readAsDataURL(file); };
@@ -117,7 +122,7 @@ function Onboarding({ profile, onDone }: { profile: Profile; onDone: (profile: P
   const back = () => setStep(current => Math.max(1, current - 1));
   const canContinue = (step === 1 && form.name.trim() && form.age >= 18) || (step === 2) || (step === 3 && form.city) || (step === 4);
   const titles = ['О тебе', 'Предпочтения', 'Локация', 'Профиль'];
-  return <div className="onboarding"><div className="onboard-panel"><div className="onboard-top"><div className="brand">bli<span>s</span>ko</div><span className="onboard-counter">{step} / 4</span></div><div className="onboarding-progress"><i style={{ width: `${step * 25}%` }} /></div><div className="onboard-heading"><span className="onboard-kicker">ШАГ {step}</span><h1>{titles[step - 1]}</h1><p>{step === 1 ? 'Начнём с самых простых вещей.' : step === 2 ? 'Выбери, кого хочешь видеть в ленте.' : step === 3 ? 'Подберём людей рядом с тобой.' : 'Добавь фото и немного характера.'}</p></div><form className="onboard-form" onSubmit={event => { event.preventDefault(); if (step === 4) onDone(form); else next(); }}>{step === 1 && <div className="onboard-fields"><label>Имя<input autoFocus required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Например, Анна" /></label><label>Возраст<input required type="number" min="18" max="100" value={form.age} onChange={event => setForm({ ...form, age: Number(event.target.value) })} /></label></div>}{step === 2 && <div className="choice-grid"><span className="choice-label">Твой пол</span><button type="button" className={form.gender === 'female' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, gender: 'female' })}>Девушка</button><button type="button" className={form.gender === 'male' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, gender: 'male' })}>Парень</button><span className="choice-label">Кого ищешь</span><button type="button" className={form.interestedIn === 'female' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, interestedIn: 'female' })}>Девушек</button><button type="button" className={form.interestedIn === 'male' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, interestedIn: 'male' })}>Парней</button><button type="button" className={form.interestedIn === 'all' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, interestedIn: 'all' })}>Всех</button></div>}{step === 3 && <label>Город<select autoFocus required value={form.city} onChange={event => setForm({ ...form, city: event.target.value })}><option value="">Выбери город в Польше</option>{polishCities.map(city => <option key={city}>{city}</option>)}</select></label>}{step === 4 && <><label className="photo-picker">{form.image ? <img src={form.image} alt="Фото профиля" /> : <span>＋</span>}<input type="file" accept="image/*" onChange={event => setPhoto(event.target.files?.[0])} /><small>{form.image ? 'Изменить фото' : 'Добавить фото'}</small></label><label>О себе<textarea maxLength={500} value={form.bio} onChange={event => setForm({ ...form, bio: event.target.value })} placeholder="Пара слов о себе" /></label><small className="form-tip">Фото и описание можно изменить позже.</small></>}<div className="onboarding-actions">{step > 1 && <button type="button" className="secondary" onClick={back}>Назад</button>}<button className="primary wide" type="submit" disabled={!canContinue}>{step === 4 ? 'Готово' : 'Продолжить'} <ChevronRight size={19} /></button></div></form></div></div>;
+  return <div className="onboarding"><div className="onboard-panel"><div className="onboard-top"><div className="brand">bli<span>s</span>ko</div><span className="onboard-counter">{step} / 4</span></div><div className="onboarding-progress"><i style={{ width: `${step * 25}%` }} /></div><div className="onboard-heading"><span className="onboard-kicker">ШАГ {step}</span><h1>{titles[step - 1]}</h1><p>{step === 1 ? 'Начнём с самых простых вещей.' : step === 2 ? 'Выбери, кого хочешь видеть в ленте.' : step === 3 ? 'Подберём людей рядом с тобой.' : 'Добавь фото и немного характера.'}</p></div><form className="onboard-form" onSubmit={event => { event.preventDefault(); if (step === 4) onDone(form); else next(); }}>{step === 1 && <div className="onboard-fields"><label>Имя<input autoFocus required value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Например, Анна" /></label><label>Возраст<input required type="number" min="18" max="100" value={form.age} onChange={event => setForm({ ...form, age: Number(event.target.value) })} /></label></div>}{step === 2 && <div className="choice-grid"><span className="choice-label">Твой пол</span><button type="button" className={form.gender === 'female' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, gender: 'female' })}>Девушка</button><button type="button" className={form.gender === 'male' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, gender: 'male' })}>Парень</button><span className="choice-label">Кого ищешь</span><button type="button" className={form.interestedIn === 'female' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, interestedIn: 'female' })}>Девушек</button><button type="button" className={form.interestedIn === 'male' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, interestedIn: 'male' })}>Парней</button><button type="button" className={form.interestedIn === 'all' ? 'choice selected' : 'choice'} onClick={() => setForm({ ...form, interestedIn: 'all' })}>Всех</button></div>}{step === 3 && <label>Город<select autoFocus required value={form.city} onChange={event => setForm({ ...form, city: event.target.value })}><option value="">Выбери город в Польше</option>{polishCities.map(city => <option key={city}>{city}</option>)}</select></label>}{step === 4 && <><label className="photo-picker">{form.image ? <img src={form.image} alt="Фото профиля" /> : <span>＋</span>}<input type="file" accept="image/*" onChange={event => setPhoto(event.target.files?.[0])} /><small>{form.image ? 'Изменить фото' : 'Добавить фото'}</small></label><label>О себе<textarea maxLength={500} value={form.bio} onChange={event => setForm({ ...form, bio: event.target.value })} placeholder="Пара слов о себе" /></label><small className="form-tip">Фото и описание можно изменить позже.</small></>}<div className="onboarding-actions">{step > 1 && <button type="button" className="secondary" onClick={back} disabled={saving}>Назад</button>}<button className="primary wide" type="submit" disabled={!canContinue || saving}>{saving ? 'Сохраняем…' : step === 4 ? 'Готово' : 'Продолжить'} {!saving && <ChevronRight size={19} />}</button></div></form></div></div>;
 }
 
 function ProfileForm({ form, setForm, setPhoto, submit, submitLabel }: { form: Profile; setForm: (profile: Profile) => void; setPhoto: (file?: File) => void; submit: (event: FormEvent) => void; submitLabel: string }) {
