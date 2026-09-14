@@ -253,22 +253,26 @@ function limited(userId, action, maxRequests, windowMs) {
   return false;
 }
 function validateInitData(initData) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || typeof initData !== 'string' || !initData) return null;
-  const params = new URLSearchParams(initData); const receivedHash = params.get('hash');
-  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return null;
-  params.delete('hash');
-  const check = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(token).digest();
-  const expected = createHmac('sha256', secret).update(check).digest('hex');
-  if (!timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(expected, 'hex'))) return null;
-  const authDate = Number(params.get('auth_date'));
-  const authAge = Date.now() - authDate * 1000;
-  if (!Number.isInteger(authDate) || authAge < 0 || authAge > TELEGRAM_INIT_DATA_TTL_MS) return null;
   try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (!token || typeof initData !== 'string' || !initData) return null;
+    const params = new URLSearchParams(initData);
+    const receivedHash = params.get('hash');
+    if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return null;
+    params.delete('hash');
+    const check = [...params.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(token).digest();
+    const expected = createHmac('sha256', secret).update(check).digest('hex');
+    if (!timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(expected, 'hex'))) return null;
+    const authDate = Number(params.get('auth_date'));
+    const authAge = Date.now() - authDate * 1000;
+    if (!Number.isInteger(authDate) || authAge < 0 || authAge > TELEGRAM_INIT_DATA_TTL_MS) return null;
     const user = JSON.parse(params.get('user') || '{}');
     return Number.isSafeInteger(Number(user.id)) && Number(user.id) > 0 ? user : null;
-  } catch { return null; }
+  } catch (error) {
+    console.warn(`Telegram initData validation failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 function userFromRequest(request) {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
