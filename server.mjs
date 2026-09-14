@@ -8,6 +8,8 @@ const PORT = Number(process.env.PORT || 8787);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const TELEGRAM_INIT_DATA_TTL_MS = 60 * 60 * 1000;
 const RANDOM_ROOM_TTL_MS = 30 * 60 * 1000;
+const AUTH_RATE_LIMIT = 20;
+const AUTH_RATE_WINDOW_MS = 5 * 60 * 1000;
 const dbFile = new URL('./blisko.local.json', import.meta.url);
 const demoProfileIds = new Set(['900000001', '987654']);
 const sessions = new Map();
@@ -17,6 +19,7 @@ const messages = new Map();
 const notifications = new Map();
 const randomRooms = new Map();
 const requestWindows = new Map();
+const authWindows = new Map();
 let supabase = null;
 let supabaseReady = false;
 const conversationKey = (firstId, secondId) => [Number(firstId), Number(secondId)].sort((a, b) => a - b).join(':');
@@ -219,6 +222,18 @@ function limited(userId, action, maxRequests, windowMs) {
     requestWindows.set(key, recent);
     return true;
   }
+  function limitedAuth(request) {
+    const address = request.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const recent = (authWindows.get(address) || []).filter((timestamp) => now - timestamp < AUTH_RATE_WINDOW_MS);
+    if (recent.length >= AUTH_RATE_LIMIT) {
+      authWindows.set(address, recent);
+      return true;
+    }
+    recent.push(now);
+    authWindows.set(address, recent);
+    return false;
+  }
   recent.push(now);
   requestWindows.set(key, recent);
   return false;
@@ -341,8 +356,9 @@ async function handle(request, response) {
     try { return json(response, 200, await telegramBotInfo()); } catch { return json(response, 503, { configured: true, valid: false }); }
   }
   if (request.method === 'POST' && url.pathname === '/api/auth/telegram') {
+    if (limitedAuth(request)) return json(response, 429, { error: 'Too many authentication attempts. Try again shortly.' });
     const payload = await body(request); if (payload === null) return json(response, 400, { error: 'Invalid JSON' });
-    if (typeof payload.initData !== 'string' || !payload.initData) return json(response, 401, { error: 'Telegram initData is required' });
+    if (typeof payload.initData !== 'string' || !payload.initData || payload.initData.length > 10_000) return json(response, 401, { error: 'Invalid Telegram initData' });
     const user = validateInitData(payload.initData || '');
     if (!user) return json(response, 401, { error: 'Invalid Telegram initData' });
     if (!profileFor(user) && supabaseClient()) {
