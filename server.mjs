@@ -6,7 +6,20 @@ import { createClient } from '@supabase/supabase-js';
 
 const PORT = Number(process.env.PORT || 8787);
 const dbFile = new URL('./blisko.local.json', import.meta.url);
-const profiles = [];
+const testProfile = {
+  id: 900000001,
+  name: 'София',
+  age: 26,
+  city: 'Warszawa',
+  distance: 'рядом с вами',
+  bio: 'Тестовый профиль BLISKO для проверки ленты, лайков и чата.',
+  tags: ['кофе', 'путешествия', 'музыка'],
+  image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800&q=85',
+  gender: 'female',
+  interestedIn: 'all',
+  online: true,
+};
+const profiles = [testProfile];
 const sessions = new Map();
 const userProfiles = new Map();
 const userState = new Map();
@@ -145,7 +158,7 @@ function conversationsFor(user) {
   const messageIds = [...messages.keys()]
     .filter((key) => key.split(':').includes(String(user.id)))
     .map((key) => key.split(':').map(Number).find((id) => id !== Number(user.id)));
-  const ids = [...new Set([...likedIds, ...messageIds])];
+  const ids = [...new Set([testProfile.id, ...likedIds, ...messageIds])];
   return ids.map((id) => {
     const p = [...profiles, ...userProfiles.values()].find((profile) => profile.id === Number(id));
     if (!p) return null;
@@ -202,7 +215,8 @@ async function handle(request, response) {
     const visible = [...profiles, ...userProfiles.values()].filter((p) => {
       const sameArea = !ownCity || !p.city || p.city === ownCity || (nearby.has(ownCity) && nearby.has(p.city));
       const genderMatches = !profileFor(user)?.interestedIn || profileFor(user).interestedIn === 'all' || p.gender === profileFor(user).interestedIn;
-      return Number(p.id) !== Number(user.id) && sameArea && genderMatches && !state.skips.has(p.id) && !state.likes.has(p.id);
+      const isTestProfile = Number(p.id) === testProfile.id;
+      return Number(p.id) !== Number(user.id) && (isTestProfile || (sameArea && genderMatches)) && !state.skips.has(p.id) && !state.likes.has(p.id);
     });
     return json(response, 200, { profiles: visible });
   }
