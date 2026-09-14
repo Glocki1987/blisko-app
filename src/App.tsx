@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, Image as ImageIcon, MapPin, MessageCircle, Mic, MoreHorizontal, Send, ShieldCheck, SlidersHorizontal, Sparkles, Square, UserRound, X } from 'lucide-react';
+import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, Image as ImageIcon, MapPin, MessageCircle, Mic, Send, ShieldCheck, SlidersHorizontal, Sparkles, Square, UserRound, X } from 'lucide-react';
 import { type Chat, type Gender, type InterestedIn, type Profile } from './data';
 import { telegram } from './telegram';
 
@@ -104,7 +104,7 @@ function App() {
     <header className="topbar"><div className="brand">bli<span>s</span>ko</div><button className="icon-btn" onClick={() => setTab('profile')}><SlidersHorizontal size={20} /></button></header>
     {selectedChat && activeChat ? <ChatView chat={activeChat} onBack={() => setSelectedChat(null)} onSent={refresh} /> : <main className="main-content">
       {tab === 'discover' && (current ? <Discover profile={current} onOpen={() => setViewed(current)} onLike={() => act(current.id, 'like')} onSkip={() => act(current.id, 'skip')} /> : <Empty icon={<Sparkles />} title="Лента закончилась" text="Измени фильтр или загляни позже." action="Обновить" onClick={refresh} />)}
-      {tab === 'likes' && <Likes liked={liked} matches={matches} onOpen={() => setTab('discover')} onOpenChat={setSelectedChat} />}
+      {tab === 'likes' && <Likes matches={matches} onOpen={() => setTab('discover')} onOpenChat={setSelectedChat} />}
       {tab === 'messages' && <Messages chats={chats} onOpen={setSelectedChat} />}
       {tab === 'profile' && <ProfileView profile={profile} online={online} onSave={saveProfile} onOpenUtility={setUtility} />}
     </main>}
@@ -133,11 +133,10 @@ function Discover({ profile, onOpen, onLike, onSkip }: { profile: Profile; onOpe
   return <section className="discover"><div className="section-heading"><div><p className="eyebrow">ТВОЯ ЛЕНТА</p><h2>Кто рядом</h2><p className="location-label"><MapPin size={13} /> {profile.city}</p></div><button className="filter" onClick={onOpen}><SlidersHorizontal size={18} /></button></div><div className="card-wrap"><article className="profile-card" onClick={onOpen}><img src={profile.image} alt={profile.name} /><div className="shade" /><div className="online-dot" /><div className="card-info"><div className="card-name"><h2>{profile.name}, {profile.age}</h2><span><Check size={14} /></span></div><p><MapPin size={14} /> {profile.distance || profile.city}</p><p className="bio">{profile.bio}</p><div className="tags">{profile.tags.map(tag => <span key={tag}>#{tag}</span>)}</div><small>Нажми, чтобы открыть профиль</small></div></article></div><div className="actions"><button className="round-btn skip" onClick={onSkip}><X /></button><button className="round-btn like" onClick={onLike}><Heart fill="currentColor" /></button></div></section>;
 }
 
-function Likes({ liked, matches, onOpen, onOpenChat }: { liked: number[]; matches: Profile[]; onOpen: () => void; onOpenChat: (id: number) => void }) {
-  return <section><div className="section-heading"><div><p className="eyebrow">ВЗАИМНОСТЬ</p><h2>Твои лайки <span className="count">{liked.length}</span></h2></div></div>{matches.length ? <div className="match-grid">{matches.map(match => <article className="match-card" key={match.id}><img src={match.image} alt={match.name} /><div><b>{match.name}, {match.age}</b><span>{match.city}</span></div><button className="primary" onClick={() => onOpenChat(match.id)}>Чат</button></article>)}</div> : <Empty icon={<Heart />} title="Пока тихо" text="Взаимные совпадения появятся после ответного лайка." action="Перейти в ленту" onClick={onOpen} />}</section>;
+function Likes({ matches, onOpen, onOpenChat }: { matches: Profile[]; onOpen: () => void; onOpenChat: (id: number) => void }) {
+  return <section><div className="section-heading"><div><p className="eyebrow">ВЗАИМНОСТЬ</p><h2>Твои лайки</h2></div></div>{matches.length ? <div className="match-grid">{matches.map(match => <article className="match-card" key={match.id}><img src={match.image} alt={match.name} /><div><b>{match.name}, {match.age}</b><span>{match.city}</span></div><button className="primary" onClick={() => onOpenChat(match.id)}>Чат</button></article>)}</div> : <Empty icon={<Heart />} title="Пока тихо" text="Взаимные совпадения появятся после ответного лайка." action="Перейти в ленту" onClick={onOpen} />}</section>;
 }
-
-function Messages({ chats, onOpen }: { chats: Chat[]; onOpen: (id: number) => void }) { return <section><div className="section-heading"><div><p className="eyebrow">ОБЩЕНИЕ</p><h2>Сообщения</h2></div><MoreHorizontal /></div><div className="chat-list">{chats.map(chat => <button className="chat-row" key={chat.id} onClick={() => onOpen(chat.id)}><div className="avatar-wrap"><img src={chat.avatar} alt="" /></div><div className="chat-text"><div><b>{chat.name}</b><time>{chat.time}</time></div><p>{chat.last}</p></div></button>)}</div></section>; }
+function Messages({ chats, onOpen }: { chats: Chat[]; onOpen: (id: number) => void }) { return <section><div className="section-heading"><div><p className="eyebrow">ОБЩЕНИЕ</p><h2>Сообщения</h2></div></div><div className="chat-list">{chats.map(chat => <button className="chat-row" key={chat.id} onClick={() => onOpen(chat.id)}><div className="avatar-wrap"><img src={chat.avatar} alt="" /></div><div className="chat-text"><div><b>{chat.name}</b><time>{chat.time}</time></div><p>{chat.last}</p></div></button>)}</div></section>; }
 function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; onSent: () => void }) {
   const [message, setMessage] = useState('');
   const [items, setItems] = useState<Message[]>([]);

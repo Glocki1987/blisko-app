@@ -11,7 +11,7 @@ button { border: 0; font: inherit; cursor: pointer; color: inherit; }
 .topbar { height: 72px; padding: 0 23px; display: flex; align-items: center; justify-content: space-between; }
 .brand { font-size: 27px; font-weight: 700; letter-spacing: -1.5px; color: #292522; }.brand span { color: #e66e72; }
 .icon-btn,.filter,.back { background: #f1eeeb; color: #77706c; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; }
-.main-content { padding: 4px 20px 24px; }.section-heading { display:flex; justify-content:space-between; align-items:flex-end; margin: 14px 2px 22px; }
+.main-content { padding: 4px 20px 24px; }.section-heading { display:flex; justify-content:space-between; align-items:flex-end; margin: 14px 2px 22px; min-height:54px; }.section-heading h2{font-size:30px;letter-spacing:-1.2px}.section-heading .eyebrow{letter-spacing:1.5px}
 .eyebrow { margin: 0 0 5px; font-size: 10px; letter-spacing: 2px; color: #a39a95; font-weight: 700; }.section-heading h2 { margin:0; font-size:28px; letter-spacing:-1px; }
 .count { color:#e66e72; font-size:16px; vertical-align:top; }
 .card-wrap { height: min(66vh, 570px); min-height: 430px; }.profile-card { position:relative; height:100%; overflow:hidden; border-radius:25px; background:#ddd; box-shadow: 0 14px 35px rgba(72,52,42,.14); }
