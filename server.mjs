@@ -168,6 +168,12 @@ function profileFor(user) {
   if (!profile || !Number.isInteger(Number(profile.age)) || Number(profile.age) < 18 || Number(profile.age) > 100) return undefined;
   return profile;
 }
+function validateProfileImage(value) {
+  if (value === '') return true;
+  if (typeof value !== 'string' || value.length > 1_000_000) return false;
+  if (/^https:\/\//i.test(value)) return value.length <= 2_048;
+  return /^data:image\/(?:jpeg|png|webp);base64,[a-z0-9+/=\s]+$/i.test(value);
+}
 
 async function loadDotEnv() {
   try {
@@ -358,8 +364,13 @@ async function handle(request, response) {
   if (url.pathname === '/api/profile' && request.method === 'GET') return json(response, 200, { profile: profileFor(user) || { id: user.id, name: user.first_name || '', age: 18, city: '', distance: '', bio: '', tags: [], image: '', gender: 'female', interestedIn: 'all', datingMode: 'friends' } });
   if (url.pathname === '/api/profile' && ['POST', 'PUT'].includes(request.method)) {
     const payload = await body(request); if (!payload?.name?.trim()) return json(response, 400, { error: 'Name is required' });
+    if (payload.name.trim().length > 80) return json(response, 400, { error: 'Name is too long' });
     const age = Number(payload.age);
     if (!Number.isInteger(age) || age < 18 || age > 100) return json(response, 400, { error: 'Age must be between 18 and 100' });
+    if (typeof payload.city === 'string' && payload.city.trim().length > 100) return json(response, 400, { error: 'City is too long' });
+    if (typeof payload.bio === 'string' && payload.bio.trim().length > 500) return json(response, 400, { error: 'Bio is too long' });
+    if (!validateProfileImage(typeof payload.image === 'string' ? payload.image : '')) return json(response, 400, { error: 'Invalid profile image' });
+    if (Array.isArray(payload.tags) && payload.tags.some((tag) => typeof tag !== 'string' || tag.length > 40)) return json(response, 400, { error: 'Invalid interests' });
     const modes = ['hot', 'quick', 'friends', 'relationship', 'casual', 'company'];
     const profile = { id: user.id, name: payload.name.trim(), age, city: typeof payload.city === 'string' ? payload.city.trim() : '', distance: 'рядом с вами', bio: typeof payload.bio === 'string' ? payload.bio.trim() : '', tags: Array.isArray(payload.tags) ? payload.tags.map(String).filter(Boolean).slice(0, 15) : [], image: typeof payload.image === 'string' ? payload.image : '', gender: payload.gender === 'male' ? 'male' : 'female', interestedIn: ['male', 'female', 'all'].includes(payload.interestedIn) ? payload.interestedIn : 'all', datingMode: modes.includes(payload.datingMode) ? payload.datingMode : 'friends', online: true, updated_at: new Date().toISOString() };
     userProfiles.set(String(user.id), profile); await saveDatabase(); await remoteProfile(profile); return json(response, 200, { profile });
