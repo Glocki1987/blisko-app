@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, Image as ImageIcon, MapPin, MessageCircle, Mic, Send, ShieldCheck, SlidersHorizontal, Sparkles, Square, UserRound, X } from 'lucide-react';
+import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, Image as ImageIcon, MapPin, MessageCircle, Mic, RotateCcw, Send, ShieldCheck, SlidersHorizontal, Sparkles, Square, UserRound, X, Zap } from 'lucide-react';
 import { type Chat, type Gender, type InterestedIn, type Profile } from './data';
 import { telegram } from './telegram';
 
@@ -36,6 +36,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [matchNotice, setMatchNotice] = useState<Profile | null>(null);
 
   const refresh = async () => {
     try {
@@ -93,7 +94,14 @@ function App() {
   const act = async (id: number, action: 'like' | 'skip') => {
     setDiscover(items => items.filter(item => item.id !== id));
     if (action === 'like') setLiked(items => items.includes(id) ? items : [...items, id]);
-    await api(action === 'like' ? '/api/likes' : '/api/discover/skip', json({ profileId: id })).then(refresh).catch(error => console.error('Действие не сохранено', error));
+    try {
+      const result = await api<{ matched?: boolean }>(action === 'like' ? '/api/likes' : '/api/discover/skip', json({ profileId: id }));
+      await refresh();
+      return Boolean(result.matched);
+    } catch (error) {
+      console.error('Действие не сохранено', error);
+      return false;
+    }
   };
   if (loading) return <div className="loading-screen">Загружаем профиль…</div>;
   if (loadError) return <div className="loading-screen error-screen"><div><h2>Не удалось войти</h2><p>{loadError}</p><button className="primary" onClick={refresh}>Повторить</button></div></div>;
@@ -103,7 +111,7 @@ function App() {
   return <div className="app-shell">
     <header className="topbar"><div className="brand">bli<span>s</span>ko</div><button className="icon-btn" onClick={() => setTab('profile')}><SlidersHorizontal size={20} /></button></header>
     {selectedChat && activeChat ? <ChatView chat={activeChat} onBack={() => setSelectedChat(null)} onSent={refresh} /> : <main className="main-content">
-      {tab === 'discover' && (current ? <Discover profile={current} onOpen={() => setViewed(current)} onLike={() => act(current.id, 'like')} onSkip={() => act(current.id, 'skip')} /> : <Empty icon={<Sparkles />} title="Лента закончилась" text="Измени фильтр или загляни позже." action="Обновить" onClick={refresh} />)}
+      {tab === 'discover' && (current ? <Discover profile={current} onOpen={() => setViewed(current)} onLike={async () => { if (await act(current.id, 'like')) setMatchNotice(current); }} onSkip={() => act(current.id, 'skip')} /> : <Empty icon={<Sparkles />} title="Лента закончилась" text="Измени фильтр или загляни позже." action="Обновить" onClick={refresh} />)}
       {tab === 'likes' && <Likes matches={matches} onOpen={() => setTab('discover')} onOpenChat={setSelectedChat} />}
       {tab === 'messages' && <Messages chats={chats} onOpen={setSelectedChat} />}
       {tab === 'profile' && <ProfileView profile={profile} online={online} onSave={saveProfile} onOpenUtility={setUtility} />}
@@ -111,6 +119,7 @@ function App() {
     {!selectedChat && <nav className="bottom-nav">{([['discover', House, 'Лента'], ['likes', Heart, 'Лайки'], ['messages', MessageCircle, 'Чаты'], ['profile', UserRound, 'Профиль']] as const).map(([key, Icon, label]) => <button key={key} className={tab === key ? 'nav-item active' : 'nav-item'} onClick={() => setTab(key)}><Icon size={21} fill={tab === key && key === 'likes' ? 'currentColor' : 'none'} /><span>{label}</span></button>)}</nav>}
     {viewed && <ProfileDetail profile={viewed} onClose={() => setViewed(null)} onLike={() => { act(viewed.id, 'like'); setViewed(null); }} onMessage={() => { act(viewed.id, 'like'); setSelectedChat(viewed.id); setViewed(null); }} />}
     {utility && <UtilityModal type={utility} notifications={notifications} onClose={() => setUtility(null)} />}
+    {matchNotice && <div className="match-overlay" onClick={() => setMatchNotice(null)}><div className="match-glow" /><div className="match-particles">✦ ✧ ✦ ✧ ✦</div><div className="match-avatars"><img src={profile.image} alt="" /><Heart fill="currentColor" /><img src={matchNotice.image} alt={matchNotice.name} /></div><p className="eyebrow">НОВАЯ СИМПАТИЯ</p><h2>Вы понравились<br />друг другу</h2><button className="primary wide" onClick={() => { setMatchNotice(null); setSelectedChat(matchNotice.id); }}>Написать сейчас <MessageCircle size={18} /></button><button className="match-dismiss" onClick={() => setMatchNotice(null)}>Продолжить просмотр</button></div>}
   </div>;
 }
 
@@ -130,7 +139,11 @@ function ProfileForm({ form, setForm, setPhoto, submit, submitLabel }: { form: P
 }
 
 function Discover({ profile, onOpen, onLike, onSkip }: { profile: Profile; onOpen: () => void; onLike: () => void; onSkip: () => void }) {
-  return <section className="discover"><div className="section-heading"><div><p className="eyebrow">ТВОЯ ЛЕНТА</p><h2>Кто рядом</h2><p className="location-label"><MapPin size={13} /> {profile.city}</p></div><button className="filter" onClick={onOpen}><SlidersHorizontal size={18} /></button></div><div className="card-wrap"><article className="profile-card" onClick={onOpen}><img src={profile.image} alt={profile.name} /><div className="shade" /><div className="online-dot" /><div className="card-info"><div className="card-name"><h2>{profile.name}, {profile.age}</h2><span><Check size={14} /></span></div><p><MapPin size={14} /> {profile.distance || profile.city}</p><p className="bio">{profile.bio}</p><div className="tags">{profile.tags.map(tag => <span key={tag}>#{tag}</span>)}</div><small>Нажми, чтобы открыть профиль</small></div></article></div><div className="actions"><button className="round-btn skip" onClick={onSkip}><X /></button><button className="round-btn like" onClick={onLike}><Heart fill="currentColor" /></button></div></section>;
+  const [offset, setOffset] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const start = useRef(0);
+  const finishDrag = (value: number) => { setDragging(false); if (Math.abs(value) > 90) { value > 0 ? onLike() : onSkip(); } else setOffset(0); };
+  return <section className="discover"><div className="section-heading"><div><p className="eyebrow">DISCOVER / 01</p><h2>Кто рядом</h2><p className="location-label"><MapPin size={13} /> {profile.city}</p></div><button className="filter" onClick={onOpen}><SlidersHorizontal size={18} /></button></div><div className="card-wrap"><article className={`profile-card swipe-card ${dragging ? 'is-dragging' : ''}`} style={{ transform: `translateX(${offset}px) rotate(${offset / 18}deg)` }} onPointerDown={event => { start.current = event.clientX; setDragging(true); event.currentTarget.setPointerCapture(event.pointerId); }} onPointerMove={event => { if (dragging) setOffset(event.clientX - start.current); }} onPointerUp={() => finishDrag(offset)} onClick={event => { if (Math.abs(offset) < 8) onOpen(); }}><div className={`swipe-signal ${offset > 20 ? 'positive' : offset < -20 ? 'negative' : ''}`}>{offset > 20 ? 'LIKE' : offset < -20 ? 'PASS' : ''}</div><img src={profile.image} alt={profile.name} /><div className="shade" /><div className="online-dot" /><div className="card-info"><div className="card-name"><h2>{profile.name}, {profile.age}</h2><span><Check size={14} /></span></div><p><MapPin size={14} /> {profile.distance || profile.city}</p><p className="bio">{profile.bio}</p><div className="tags">{profile.tags.map(tag => <span key={tag}>#{tag}</span>)}<span className="ai-score"><Zap size={11} /> 94% match</span></div></div></article></div><div className="actions"><button className="round-btn utility" onClick={() => setOffset(0)}><RotateCcw /></button><button className="round-btn skip" onClick={onSkip}><X /></button><button className="round-btn like" onClick={onLike}><Heart fill="currentColor" /></button><button className="round-btn utility" onClick={onLike}><Zap /></button></div></section>;
 }
 
 function Likes({ matches, onOpen, onOpenChat }: { matches: Profile[]; onOpen: () => void; onOpenChat: (id: number) => void }) {
@@ -142,6 +155,7 @@ function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; on
   const [items, setItems] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [wingmanLoading, setWingmanLoading] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const recorder = useRef<MediaRecorder | null>(null);
@@ -184,8 +198,12 @@ function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; on
     current.start();
     setRecording(true);
   };
+  const generateWingman = () => {
+    setWingmanLoading(true);
+    window.setTimeout(() => { setMessage(`Привет! ${chat.name}, какой момент сегодня сделал твой день лучше?`); setWingmanLoading(false); }, 650);
+  };
   const renderMessage = (item: Message) => item.text.startsWith('data:image/') ? <img className="message-image" src={item.text} alt="Фото в сообщении" /> : item.text.startsWith('data:audio/') ? <audio className="message-audio" controls src={item.text} /> : item.text;
-  return <main className="chat-view"><header className="chat-head"><button className="back" onClick={onBack}><ArrowLeft /></button><img src={chat.avatar} alt="" /><div><b>{chat.name}</b><small><i className="status-dot" /> {chat.online ? 'в сети' : 'был(а) недавно'}</small></div></header><div className="messages">{items.map(item => <div className={`bubble ${item.sender === 'me' ? 'mine' : 'theirs'}`} key={item.id}>{renderMessage(item)}<time>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>)}{sending && <div className="typing-indicator" aria-label="Отправка сообщения"><i /><i /><i /></div>}<div ref={messagesEnd} /></div><form className="composer" onSubmit={send}><input ref={fileInput} hidden type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) sendAttachment(file); event.target.value = ''; }} /><button type="button" className="chat-tool" onClick={() => fileInput.current?.click()} aria-label="Отправить фото"><ImageIcon size={19} /></button><input value={message} onChange={event => setMessage(event.target.value)} placeholder={recording ? 'Идёт запись голоса…' : 'Написать сообщение...'} disabled={recording} /><button type="button" className={`chat-tool ${recording ? 'recording' : ''}`} onClick={toggleRecording} aria-label={recording ? 'Остановить запись' : 'Записать голосовое'}>{recording ? <Square size={16} /> : <Mic size={19} />}</button><button type="submit" disabled={sending || recording}><Send size={18} /></button></form></main>;
+  return <main className="chat-view"><header className="chat-head"><button className="back" onClick={onBack}><ArrowLeft /></button><img src={chat.avatar} alt="" /><div><b>{chat.name}</b><small><i className="status-dot" /> {chat.online ? 'в сети' : 'был(а) недавно'}</small></div></header><div className="messages">{items.map(item => <div className={`bubble ${item.sender === 'me' ? 'mine' : 'theirs'}`} key={item.id}>{renderMessage(item)}<time>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>)}{sending && <div className="typing-indicator" aria-label="Отправка сообщения"><i /><i /><i /></div>}<div ref={messagesEnd} /></div><form className="composer" onSubmit={send}><input ref={fileInput} hidden type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) sendAttachment(file); event.target.value = ''; }} /><button type="button" className="chat-tool" onClick={() => fileInput.current?.click()} aria-label="Отправить фото"><ImageIcon size={19} /></button><input value={message} onChange={event => setMessage(event.target.value)} placeholder={recording ? 'Идёт запись голоса…' : 'Написать сообщение...'} disabled={recording} /><button type="button" className={`chat-tool wingman ${wingmanLoading ? 'is-loading' : ''}`} onClick={generateWingman} aria-label="AI Wingman"><Sparkles size={18} /></button><button type="button" className={`chat-tool ${recording ? 'recording' : ''}`} onClick={toggleRecording} aria-label={recording ? 'Остановить запись' : 'Записать голосовое'}>{recording ? <Square size={16} /> : <Mic size={19} />}</button><button type="submit" disabled={sending || recording}><Send size={18} /></button></form></main>;
 }
 
 function ProfileView({ profile, online, onSave, onOpenUtility }: { profile: Profile; online: boolean; onSave: (profile: Profile) => void; onOpenUtility: (type: 'notifications' | 'privacy' | 'help') => void }) { const [editing, setEditing] = useState(false); const [form, setForm] = useState(profile); const setPhoto = (file?: File) => { if (!file || !file.type.startsWith('image/') || file.size > 5_000_000) return; const reader = new FileReader(); reader.onload = () => setForm({ ...form, image: String(reader.result) }); reader.readAsDataURL(file); }; return <section><div className="profile-hero"><img src={profile.image} alt={profile.name} /><button className="edit" onClick={() => { setForm(profile); setEditing(!editing); }}>{editing ? 'Отмена' : 'Изменить профиль'}</button><h2>{profile.name}, {profile.age}</h2><p><MapPin size={14} /> {profile.city} · {online ? 'синхронизировано' : 'офлайн'}</p></div>{editing ? <ProfileForm form={form} setForm={setForm} setPhoto={setPhoto} submit={event => { event.preventDefault(); onSave(form); setEditing(false); }} submitLabel="Сохранить изменения" /> : <div className="settings"><button className="setting" onClick={() => onOpenUtility('notifications')}><span><Bell /></span>Уведомления<ChevronRight className="push" size={18} /></button><button className="setting" onClick={() => onOpenUtility('privacy')}><span><ShieldCheck /></span>Конфиденциальность<ChevronRight className="push" size={18} /></button><button className="setting" onClick={() => onOpenUtility('help')}><span><HelpCircle /></span>Помощь и поддержка<ChevronRight className="push" size={18} /></button></div>}</section>; }
