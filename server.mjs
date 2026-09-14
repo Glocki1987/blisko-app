@@ -44,6 +44,14 @@ async function remoteRows(table, query = {}) {
   if (error) throw new Error(`Supabase ${table}: ${error.message}`);
   return data || [];
 }
+async function remoteProfileById(id) {
+  const client = supabaseClient();
+  if (!client) return null;
+  const { data, error } = await client.from('blisko_profiles').select('*').eq('id', String(id)).maybeSingle();
+  if (error) throw new Error(`Supabase blisko_profiles: ${error.message}`);
+  if (!data) return null;
+  return { ...data, id: Number(data.id), tags: Array.isArray(data.tags) ? data.tags : [], gender: data.gender || 'female', interestedIn: data.interested_in || 'all' };
+}
 async function remoteUpsert(table, value) {
   const client = supabaseClient();
   if (!client) return false;
@@ -196,6 +204,10 @@ async function handle(request, response) {
     if (typeof payload.initData !== 'string' || !payload.initData) return json(response, 401, { error: 'Telegram initData is required' });
     const user = payload.initData ? validateInitData(payload.initData) : { id: payload.userId || 1001, first_name: 'Алекс', username: 'demo' };
     if (!user) return json(response, 401, { error: 'Invalid Telegram initData' });
+    if (!profileFor(user) && supabaseClient()) {
+      const storedProfile = await remoteProfileById(user.id);
+      if (storedProfile) userProfiles.set(String(user.id), storedProfile);
+    }
     const accessToken = randomUUID(); sessions.set(accessToken, { id: user.id, first_name: user.first_name || 'Пользователь', username: user.username });
     return json(response, 200, { accessToken, user, profile: profileFor(user) || null });
   }
