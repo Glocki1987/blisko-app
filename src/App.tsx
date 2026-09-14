@@ -106,7 +106,7 @@ function App() {
       return false;
     }
   };
-  if (loading) return <div className="loading-screen">Загружаем профиль…</div>;
+  if (loading) return <LaunchScreen />;
   if (loadError) return <div className="loading-screen error-screen"><div><h2>Не удалось войти</h2><p>{loadError}</p><button className="primary" onClick={refresh}>Повторить</button></div></div>;
   if (!onboarded) return <Onboarding profile={profile} onDone={saveProfile} saving={savingProfile} />;
   const current = discover[0];
@@ -123,6 +123,15 @@ function App() {
     {viewed && <ProfileDetail profile={viewed} onClose={() => setViewed(null)} onLike={() => { act(viewed.id, 'like'); setViewed(null); }} onMessage={() => { act(viewed.id, 'like'); setSelectedChat(viewed.id); setViewed(null); }} />}
     {utility && <UtilityModal type={utility} notifications={notifications} onClose={() => setUtility(null)} />}
     {matchNotice && <div className="match-overlay" onClick={() => setMatchNotice(null)}><div className="match-glow" /><div className="match-particles">✦ ✧ ✦ ✧ ✦</div><div className="match-avatars"><img src={profile.image} alt="" /><Heart fill="currentColor" /><img src={matchNotice.image} alt={matchNotice.name} /></div><p className="eyebrow">НОВАЯ СИМПАТИЯ</p><h2>Вы понравились<br />друг другу</h2><button className="primary wide" onClick={() => { setMatchNotice(null); setSelectedChat(matchNotice.id); }}>Написать сейчас <MessageCircle size={18} /></button><button className="match-dismiss" onClick={() => setMatchNotice(null)}>Продолжить просмотр</button></div>}
+  </div>;
+}
+
+function LaunchScreen() {
+  return <div className="loading-screen" aria-label="BLISKO запускается">
+    <div className="launch-aura" />
+    <div className="launch-mark"><span className="launch-ring ring-one" /><span className="launch-ring ring-two" /><span className="launch-ring ring-three" /><span className="launch-core">b</span><i className="launch-dot dot-one" /><i className="launch-dot dot-two" /><i className="launch-dot dot-three" /></div>
+    <div className="launch-brand">bli<span>s</span>ko</div>
+    <div className="launch-progress"><i /></div>
   </div>;
 }
 
