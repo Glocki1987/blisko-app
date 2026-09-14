@@ -381,13 +381,13 @@ async function handle(request, response) {
     if (typeof payload.initData !== 'string' || !payload.initData || payload.initData.length > 10_000) return json(response, 401, { error: 'Invalid Telegram initData' });
     const user = validateInitData(payload.initData || '');
     if (!user) return json(response, 401, { error: 'Invalid Telegram initData' });
-    if (!profileFor(user) && supabaseClient()) {
-      try {
+    try {
+      if (!profileFor(user) && supabaseClient()) {
         const storedProfile = await remoteProfileById(user.id);
         if (storedProfile) userProfiles.set(String(user.id), storedProfile);
-      } catch (error) {
-        console.warn(`Supabase profile lookup unavailable during auth: ${error instanceof Error ? error.message : String(error)}`);
       }
+    } catch (error) {
+      console.warn(`Supabase profile lookup unavailable during auth: ${error instanceof Error ? error.message : String(error)}`);
     }
     const accessToken = randomUUID();
     const now = Date.now();
