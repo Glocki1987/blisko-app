@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, MapPin, MessageCircle, MoreHorizontal, Send, ShieldCheck, SlidersHorizontal, Sparkles, UserRound, X } from 'lucide-react';
+import { ArrowLeft, Bell, Check, ChevronRight, Heart, HelpCircle, House, Image as ImageIcon, MapPin, MessageCircle, Mic, MoreHorizontal, Send, ShieldCheck, SlidersHorizontal, Sparkles, Square, UserRound, X } from 'lucide-react';
 import { type Chat, type Gender, type InterestedIn, type Profile } from './data';
 import { telegram } from './telegram';
 
@@ -136,8 +136,13 @@ function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; on
   const [message, setMessage] = useState('');
   const [items, setItems] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
+  const [recording, setRecording] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
-  useEffect(() => { api<{ messages: Message[] }>(`/api/conversations/${chat.id}/messages`).then(result => setItems(result.messages)).catch(console.error); }, [chat.id]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const audioChunks = useRef<Blob[]>([]);
+  const loadMessages = () => api<{ messages: Message[] }>(`/api/conversations/${chat.id}/messages`).then(result => setItems(result.messages)).catch(console.error);
+  useEffect(() => { loadMessages(); const timer = window.setInterval(loadMessages, 4000); return () => window.clearInterval(timer); }, [chat.id]);
   useEffect(() => { messagesEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [items, sending]);
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -153,7 +158,29 @@ function ChatView({ chat, onBack, onSent }: { chat: Chat; onBack: () => void; on
       setSending(false);
     }
   };
-  return <main className="chat-view"><header className="chat-head"><button className="back" onClick={onBack}><ArrowLeft /></button><img src={chat.avatar} alt="" /><div><b>{chat.name}</b><small>в сети</small></div></header><div className="messages">{items.map(item => <div className={`bubble ${item.sender === 'me' ? 'mine' : 'theirs'}`} key={item.id}>{item.text}</div>)}{sending && <div className="typing-indicator" aria-label="Отправка сообщения"><i /><i /><i /></div>}<div ref={messagesEnd} /></div><form className="composer" onSubmit={send}><input value={message} onChange={event => setMessage(event.target.value)} placeholder="Написать сообщение..." /><button disabled={sending}><Send size={18} /></button></form></main>;
+  const sendAttachment = async (file: File) => {
+    if (file.size > 5_000_000) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      setSending(true);
+      try { const result = await api<{ message: Message }>(`/api/conversations/${chat.id}/messages`, json({ text: String(reader.result) })); setItems(current => [...current, result.message]); onSent(); } finally { setSending(false); }
+    };
+    reader.readAsDataURL(file);
+  };
+  const toggleRecording = async () => {
+    if (recording && recorder.current) { recorder.current.stop(); setRecording(false); return; }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks.current = [];
+    const current = new MediaRecorder(stream);
+    recorder.current = current;
+    current.ondataavailable = event => audioChunks.current.push(event.data);
+    current.onstop = () => { stream.getTracks().forEach(track => track.stop()); sendAttachment(new File([new Blob(audioChunks.current, { type: current.mimeType || 'audio/webm' })], 'voice.webm', { type: current.mimeType || 'audio/webm' })); };
+    current.start();
+    setRecording(true);
+  };
+  const renderMessage = (item: Message) => item.text.startsWith('data:image/') ? <img className="message-image" src={item.text} alt="Фото в сообщении" /> : item.text.startsWith('data:audio/') ? <audio className="message-audio" controls src={item.text} /> : item.text;
+  return <main className="chat-view"><header className="chat-head"><button className="back" onClick={onBack}><ArrowLeft /></button><img src={chat.avatar} alt="" /><div><b>{chat.name}</b><small><i className="status-dot" /> {chat.online ? 'в сети' : 'был(а) недавно'}</small></div></header><div className="messages">{items.map(item => <div className={`bubble ${item.sender === 'me' ? 'mine' : 'theirs'}`} key={item.id}>{renderMessage(item)}<time>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>)}{sending && <div className="typing-indicator" aria-label="Отправка сообщения"><i /><i /><i /></div>}<div ref={messagesEnd} /></div><form className="composer" onSubmit={send}><input ref={fileInput} hidden type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) sendAttachment(file); event.target.value = ''; }} /><button type="button" className="chat-tool" onClick={() => fileInput.current?.click()} aria-label="Отправить фото"><ImageIcon size={19} /></button><input value={message} onChange={event => setMessage(event.target.value)} placeholder={recording ? 'Идёт запись голоса…' : 'Написать сообщение...'} disabled={recording} /><button type="button" className={`chat-tool ${recording ? 'recording' : ''}`} onClick={toggleRecording} aria-label={recording ? 'Остановить запись' : 'Записать голосовое'}>{recording ? <Square size={16} /> : <Mic size={19} />}</button><button type="submit" disabled={sending || recording}><Send size={18} /></button></form></main>;
 }
 
 function ProfileView({ profile, online, onSave, onOpenUtility }: { profile: Profile; online: boolean; onSave: (profile: Profile) => void; onOpenUtility: (type: 'notifications' | 'privacy' | 'help') => void }) { const [editing, setEditing] = useState(false); const [form, setForm] = useState(profile); const setPhoto = (file?: File) => { if (!file || !file.type.startsWith('image/') || file.size > 5_000_000) return; const reader = new FileReader(); reader.onload = () => setForm({ ...form, image: String(reader.result) }); reader.readAsDataURL(file); }; return <section><div className="profile-hero"><img src={profile.image} alt={profile.name} /><button className="edit" onClick={() => { setForm(profile); setEditing(!editing); }}>{editing ? 'Отмена' : 'Изменить профиль'}</button><h2>{profile.name}, {profile.age}</h2><p><MapPin size={14} /> {profile.city} · {online ? 'синхронизировано' : 'офлайн'}</p></div>{editing ? <ProfileForm form={form} setForm={setForm} setPhoto={setPhoto} submit={event => { event.preventDefault(); onSave(form); setEditing(false); }} submitLabel="Сохранить изменения" /> : <div className="settings"><button className="setting" onClick={() => onOpenUtility('notifications')}><span><Bell /></span>Уведомления<ChevronRight className="push" size={18} /></button><button className="setting" onClick={() => onOpenUtility('privacy')}><span><ShieldCheck /></span>Конфиденциальность<ChevronRight className="push" size={18} /></button><button className="setting" onClick={() => onOpenUtility('help')}><span><HelpCircle /></span>Помощь и поддержка<ChevronRight className="push" size={18} /></button></div>}</section>; }
