@@ -488,8 +488,11 @@ async function handle(request, response) {
   const match = url.pathname.match(/^\/api\/conversations\/(\d+)\/messages$/);
   if (match) {
     const id = Number(match[1]);
+    const target = profileById(id);
+    if (!Number.isSafeInteger(id) || id <= 0 || id === Number(user.id) || !target) return json(response, 404, { error: 'Conversation not found' });
     const room = randomRooms.get(String(user.id));
-    const randomChatAllowed = room && room.expiresAt > Date.now() && room.id === id;
+    const pairedRoom = randomRooms.get(String(id));
+    const randomChatAllowed = room && pairedRoom && room.expiresAt > Date.now() && pairedRoom.expiresAt > Date.now() && room.id === id && pairedRoom.id === Number(user.id);
     const mutualLike = state.likes.has(id) && stateFor({ id }).likes.has(Number(user.id));
     const canChat = mutualLike || randomChatAllowed;
     if (!canChat) return json(response, 404, { error: 'Conversation not found' });
