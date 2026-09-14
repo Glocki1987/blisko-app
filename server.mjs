@@ -218,7 +218,7 @@ function allowedOrigins() {
 }
 function json(response, status, body) {
   const origin = response.getHeader('access-control-allow-origin');
-  const headers = { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer' };
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-headers': 'content-type, authorization', 'access-control-allow-methods': 'DELETE,GET,PUT,POST,OPTIONS', 'x-content-type-options': 'nosniff', 'x-frame-options': 'DENY', 'referrer-policy': 'no-referrer', 'permissions-policy': 'geolocation=(), camera=(), microphone=()' };
   if (origin) {
     headers['access-control-allow-origin'] = origin;
     headers.vary = 'Origin';
