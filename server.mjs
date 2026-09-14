@@ -31,6 +31,18 @@ function cleanupRandomRooms() {
     if (room.expiresAt <= now || !validProfileIds.has(String(userId)) || !validProfileIds.has(String(room.id))) randomRooms.delete(userId);
   }
 }
+function cleanupRuntimeState() {
+  const now = Date.now();
+  for (const [token, session] of sessions) if (session.expiresAt <= now) sessions.delete(token);
+  for (const [key, timestamps] of requestWindows) {
+    const recent = timestamps.filter((timestamp) => now - timestamp < 60_000);
+    if (recent.length) requestWindows.set(key, recent); else requestWindows.delete(key);
+  }
+  for (const [address, timestamps] of authWindows) {
+    const recent = timestamps.filter((timestamp) => now - timestamp < AUTH_RATE_WINDOW_MS);
+    if (recent.length) authWindows.set(address, recent); else authWindows.delete(address);
+  }
+}
 function supabaseClient() {
   if (supabase) return supabase;
   const url = process.env.SUPABASE_URL;
@@ -346,6 +358,7 @@ async function addNotification(userId, notification) {
   await remoteNotification(userId, notification);
 }
 async function handle(request, response) {
+  cleanupRuntimeState();
   cleanupRandomRooms();
   const requestOrigin = request.headers.origin;
   if (requestOrigin && allowedOrigins().has(requestOrigin)) response.setHeader('access-control-allow-origin', requestOrigin);
