@@ -82,19 +82,32 @@ async function loadSupabaseDatabase() {
   supabaseReady = true;
 }
 async function remoteProfile(profile) {
-  if (!supabaseReady) return;
-  await remoteUpsert('blisko_profiles', { ...profile, id: String(profile.id), tags: profile.tags || [], gender: profile.gender, interested_in: profile.interestedIn, updated_at: new Date().toISOString() });
+  if (!supabaseClient()) return;
+  await remoteUpsert('blisko_profiles', {
+    id: String(profile.id),
+    name: profile.name,
+    age: Number(profile.age),
+    city: profile.city,
+    distance: profile.distance || 'рядом с вами',
+    bio: profile.bio || '',
+    tags: profile.tags || [],
+    image: profile.image || '',
+    gender: profile.gender,
+    interested_in: profile.interestedIn,
+    online: profile.online !== false,
+    updated_at: new Date().toISOString(),
+  });
 }
 async function remoteState(userId, state) {
-  if (!supabaseReady) return;
+  if (!supabaseClient()) return;
   await remoteUpsert('blisko_user_state', { user_id: String(userId), likes: [...state.likes], skips: [...state.skips], updated_at: new Date().toISOString() });
 }
 async function remoteNotification(userId, notification) {
-  if (!supabaseReady) return;
+  if (!supabaseClient()) return;
   await remoteUpsert('blisko_notifications', { id: notification.id, user_id: String(userId), type: notification.type, title: notification.title, body: notification.body, related_id: notification.relatedId || null, created_at: notification.createdAt });
 }
 async function remoteMessage(userId, profileId, message) {
-  if (!supabaseReady) return;
+  if (!supabaseClient()) return;
   await remoteUpsert('blisko_messages', { id: message.id, user_id: String(userId), profile_id: String(profileId), sender: message.senderId, text: message.text, created_at: message.createdAt });
 }
 async function loadDatabase() {
