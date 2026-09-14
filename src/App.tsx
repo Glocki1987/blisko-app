@@ -112,7 +112,7 @@ function App() {
   const current = discover[0];
   const activeChat = chats.find(chat => chat.id === selectedChat);
   return <div className="app-shell">
-    <header className="topbar"><div className="brand">bli<span>s</span>ko</div><button className="icon-btn" onClick={() => setTab('profile')}><SlidersHorizontal size={20} /></button></header>
+    <header className="topbar"><div className="brand">bli<span>s</span>ko</div><span className="topbar-status"><i /> LIVE</span></header>
     {selectedChat && activeChat ? <ChatView chat={activeChat} onBack={() => setSelectedChat(null)} onSent={refresh} /> : <main className="main-content">
       {tab === 'discover' && (current ? <Discover profile={current} onOpen={() => setViewed(current)} onLike={async () => { if (await act(current.id, 'like')) setMatchNotice(current); }} onSkip={() => act(current.id, 'skip')} /> : <RadarEmpty onRefresh={refresh} />)}
       {tab === 'likes' && <Likes matches={matches} onOpen={() => setTab('discover')} onOpenChat={setSelectedChat} />}
