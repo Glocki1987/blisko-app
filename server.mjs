@@ -6,6 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 
 const PORT = Number(process.env.PORT || 8787);
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const TELEGRAM_INIT_DATA_TTL_MS = 60 * 60 * 1000;
+const RANDOM_ROOM_TTL_MS = 30 * 60 * 1000;
 const dbFile = new URL('./blisko.local.json', import.meta.url);
 const demoProfileIds = new Set(['900000001', '987654']);
 const sessions = new Map();
@@ -202,8 +204,12 @@ function validateInitData(initData) {
   const secret = createHmac('sha256', 'WebAppData').update(token).digest();
   const expected = createHmac('sha256', secret).update(check).digest('hex');
   if (!timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(expected, 'hex'))) return null;
-  if (Math.abs(Date.now() / 1000 - Number(params.get('auth_date'))) > 86400) return null;
-  try { return JSON.parse(params.get('user') || '{}'); } catch { return null; }
+  const authDate = Number(params.get('auth_date'));
+  if (!Number.isInteger(authDate) || Math.abs(Date.now() - authDate * 1000) > TELEGRAM_INIT_DATA_TTL_MS) return null;
+  try {
+    const user = JSON.parse(params.get('user') || '{}');
+    return Number.isSafeInteger(Number(user.id)) && Number(user.id) > 0 ? user : null;
+  } catch { return null; }
 }
 function userFromRequest(request) {
   const token = request.headers.authorization?.replace(/^Bearer\s+/i, '');
@@ -370,7 +376,7 @@ async function handle(request, response) {
     });
     if (!candidates.length) return json(response, 404, { error: 'Пока нет доступных собеседников' });
     const candidate = candidates[Math.floor(Math.random() * candidates.length)];
-    randomRooms.set(String(user.id), Number(candidate.id));
+    randomRooms.set(String(user.id), { id: Number(candidate.id), expiresAt: Date.now() + RANDOM_ROOM_TTL_MS });
     return json(response, 200, { match: { id: Number(candidate.id), city: candidate.city || 'Город не указан', online: isRecentlyActive(candidate) } });
   }
   if (request.method === 'POST' && url.pathname === '/api/discover/skip') {
@@ -409,7 +415,10 @@ async function handle(request, response) {
   const match = url.pathname.match(/^\/api\/conversations\/(\d+)\/messages$/);
   if (match) {
     const id = Number(match[1]);
-    const canChat = state.likes.has(id) || randomRooms.get(String(user.id)) === id;
+    const room = randomRooms.get(String(user.id));
+    const randomChatAllowed = room && room.expiresAt > Date.now() && room.id === id;
+    if (room && room.expiresAt <= Date.now()) randomRooms.delete(String(user.id));
+    const canChat = state.likes.has(id) || randomChatAllowed;
     if (!canChat) return json(response, 404, { error: 'Conversation not found' });
     const key = conversationKey(user.id, id); if (!messages.has(key)) messages.set(key, []);
     if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
@@ -421,7 +430,7 @@ async function handle(request, response) {
       messages.get(key).push(message);
       await saveDatabase();
       await remoteMessage(user.id, id, message);
-      const senderName = randomRooms.get(String(user.id)) === id ? 'Анонимный собеседник' : (profileFor(user)?.name || user.first_name || 'Пользователь');
+      const senderName = randomChatAllowed ? 'Анонимный собеседник' : (profileFor(user)?.name || user.first_name || 'Пользователь');
       await notifyTelegramMessage(id, senderName, message.text);
       return json(response, 201, { message: { ...message, sender: 'me' } });
     }
