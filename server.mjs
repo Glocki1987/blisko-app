@@ -211,6 +211,7 @@ function allowedOrigins() {
   return new Set([
     process.env.WEB_APP_ORIGIN,
     process.env.TELEGRAM_WEBAPP_URL,
+    'https://blisko-app-red.vercel.app',
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://localhost:4173',
