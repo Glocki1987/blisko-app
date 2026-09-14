@@ -13,6 +13,7 @@ try {
 
 const token = env.TELEGRAM_BOT_TOKEN;
 const webAppUrl = env.TELEGRAM_WEBAPP_URL || 'http://127.0.0.1:5173';
+const botUsername = (env.TELEGRAM_BOT_USERNAME || '').replace(/^@/, '').toLowerCase();
 
 if (!token) {
   console.error('TELEGRAM_BOT_TOKEN is missing. Add it to .env and run npm run bot again.');
@@ -36,9 +37,27 @@ async function telegram(method, body) {
 async function sendStart(chatId) {
   return telegram('sendMessage', {
     chat_id: chatId,
-    text: '❤️ BLISKO\n\nPoznaj ludzi blisko Ciebie.',
+    text: '💜 Добро пожаловать в BLISKO!\n\n✨ Находи людей рядом\n❤️ Получай взаимные симпатии\n💬 Общайся без лишнего шума\n📍 Открывай новые знакомства\n\nНажми кнопку ниже и начни прямо сейчас 👇',
     reply_markup: {
-      inline_keyboard: [[{ text: '💘 Otwórz BLISKO', web_app: { url: webAppUrl } }]],
+      inline_keyboard: [[{ text: '💘 Открыть BLISKO', web_app: { url: webAppUrl } }]],
+    },
+  });
+}
+
+async function configureCommands() {
+  await telegram('setMyCommands', {
+    commands: [
+      { command: 'start', description: 'Открыть BLISKO' },
+      { command: 'profile', description: 'Открыть профиль' },
+      { command: 'settings', description: 'Открыть настройки' },
+      { command: 'delete', description: 'Удаление аккаунта' },
+    ],
+  });
+  await telegram('setChatMenuButton', {
+    menu_button: {
+      type: 'web_app',
+      text: '💘 Открыть BLISKO',
+      web_app: { url: webAppUrl },
     },
   });
 }
@@ -46,7 +65,9 @@ async function sendStart(chatId) {
 async function handle(update) {
   const message = update.message;
   if (!message?.chat?.id) return;
-  const command = message.text?.trim().split(/\s+/)[0].toLowerCase();
+  const commandToken = message.text?.trim().split(/\s+/)[0].toLowerCase() || '';
+  const command = commandToken.split('@')[0];
+  if (commandToken.includes('@') && botUsername && commandToken.split('@')[1] !== botUsername) return;
   if (command === '/start' || command === '/help') return sendStart(message.chat.id);
   if (command === '/profile') {
     return telegram('sendMessage', { chat_id: message.chat.id, text: '👤 Otwórz BLISKO, aby zobaczyć swój profil.' });
@@ -62,6 +83,7 @@ async function handle(update) {
 
 console.log('BLISKO Telegram bot is running in polling mode.');
 console.log(`Mini App URL: ${webAppUrl}`);
+await configureCommands();
 await telegram('deleteWebhook', { drop_pending_updates: false });
 
 while (true) {

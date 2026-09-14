@@ -17,7 +17,9 @@ const testProfile = {
   image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800&q=85',
   gender: 'female',
   interestedIn: 'all',
+  datingMode: 'friends',
   online: true,
+  updated_at: new Date().toISOString(),
 };
 const profiles = [testProfile];
 const sessions = new Map();
@@ -25,6 +27,7 @@ const userProfiles = new Map();
 const userState = new Map();
 const messages = new Map();
 const notifications = new Map();
+const randomRooms = new Map();
 let supabase = null;
 let supabaseReady = false;
 const conversationKey = (firstId, secondId) => [Number(firstId), Number(secondId)].sort((a, b) => a - b).join(':');
@@ -50,7 +53,7 @@ async function remoteProfileById(id) {
   const { data, error } = await client.from('blisko_profiles').select('*').eq('id', String(id)).maybeSingle();
   if (error) throw new Error(`Supabase blisko_profiles: ${error.message}`);
   if (!data) return null;
-  return { ...data, id: Number(data.id), tags: Array.isArray(data.tags) ? data.tags : [], gender: data.gender || 'female', interestedIn: data.interested_in || 'all' };
+  return { ...data, id: Number(data.id), tags: Array.isArray(data.tags) ? data.tags : [], gender: data.gender || 'female', interestedIn: data.interested_in || 'all', datingMode: data.dating_mode || 'friends' };
 }
 async function remoteUpsert(table, value) {
   const client = supabaseClient();
@@ -67,7 +70,7 @@ async function loadSupabaseDatabase() {
     remoteRows('blisko_messages', { order: 'created_at' }),
     remoteRows('blisko_notifications', { order: 'created_at' }),
   ]);
-  for (const profile of profileRows) userProfiles.set(String(profile.id), { ...profile, id: Number(profile.id), tags: Array.isArray(profile.tags) ? profile.tags : [], gender: profile.gender || 'female', interestedIn: profile.interested_in || 'all', updated_at: undefined });
+  for (const profile of profileRows) userProfiles.set(String(profile.id), { ...profile, id: Number(profile.id), tags: Array.isArray(profile.tags) ? profile.tags : [], gender: profile.gender || 'female', interestedIn: profile.interested_in || 'all', datingMode: profile.dating_mode || 'friends', updated_at: profile.updated_at || new Date().toISOString() });
   for (const row of stateRows) userState.set(String(row.user_id), { likes: new Set(numericIds(row.likes)), skips: new Set(numericIds(row.skips)) });
   for (const row of messageRows) {
     const key = conversationKey(row.user_id, row.profile_id);
@@ -94,9 +97,20 @@ async function remoteProfile(profile) {
     image: profile.image || '',
     gender: profile.gender,
     interested_in: profile.interestedIn,
+    dating_mode: profile.datingMode || 'friends',
     online: profile.online !== false,
     updated_at: new Date().toISOString(),
   });
+}
+async function remoteDeleteProfile(userId) {
+  const client = supabaseClient();
+  if (!client) return;
+  for (const [table, column] of [['blisko_profiles', 'id'], ['blisko_user_state', 'user_id'], ['blisko_messages', 'user_id'], ['blisko_notifications', 'user_id']]) {
+    const { error } = await client.from(table).delete().eq(column, String(userId));
+    if (error) throw new Error(`Supabase ${table}: ${error.message}`);
+  }
+  const { error: relatedMessagesError } = await client.from('blisko_messages').delete().eq('profile_id', String(userId));
+  if (relatedMessagesError) throw new Error(`Supabase blisko_messages: ${relatedMessagesError.message}`);
 }
 async function remoteState(userId, state) {
   if (!supabaseClient()) return;
@@ -173,6 +187,27 @@ async function telegramBotInfo() {
   if (!payload.ok) return { configured: true, valid: false };
   return { configured: true, valid: true, id: payload.result.id, username: payload.result.username };
 }
+async function notifyTelegramMessage(chatId, senderName, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const webAppUrl = process.env.TELEGRAM_WEBAPP_URL;
+  if (!token || !chatId) return;
+  const preview = text.startsWith('data:image/') ? '📷 Фото' : text.startsWith('data:audio/') ? '🎙 Голосовое сообщение' : text.length > 180 ? `${text.slice(0, 177)}...` : text;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: `💬 Новое сообщение от ${senderName}\n\n${preview}`,
+        reply_markup: webAppUrl ? { inline_keyboard: [[{ text: '💘 Открыть BLISKO', web_app: { url: webAppUrl } }]] } : undefined,
+      }),
+    });
+    const result = await response.json();
+    if (!result.ok) console.warn(`Telegram message notification failed: ${result.description || 'unknown error'}`);
+  } catch (error) {
+    console.warn(`Telegram message notification unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 function conversationsFor(user) {
   const state = stateFor(user);
   const likedIds = [...state.likes].map(Number);
@@ -183,12 +218,19 @@ function conversationsFor(user) {
   return ids.map((id) => {
     const p = [...profiles, ...userProfiles.values()].find((profile) => profile.id === Number(id));
     if (!p) return null;
-    return { id: Number(id), profileId: p.id, name: p.name, avatar: p.image, last: (messages.get(conversationKey(user.id, id)) || []).at(-1)?.text || 'Начните общение', time: 'сейчас', unread: 0, online: p.online };
+    return { id: Number(id), profileId: p.id, name: p.name, avatar: p.image, last: (messages.get(conversationKey(user.id, id)) || []).at(-1)?.text || 'Начните общение', time: 'сейчас', unread: 0, online: isRecentlyActive(p) };
   });
 }
 function allProfiles() {
-  return [...profiles, ...userProfiles.values()];
+  const unique = new Map();
+  for (const profile of [...profiles, ...userProfiles.values()]) unique.set(String(profile.id), profile);
+  return [...unique.values()];
 }
+const isRecentlyActive = (profile) => {
+  const updatedAt = Date.parse(profile.updated_at || '');
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt < 5 * 60 * 1000;
+};
+const profilesWithPresence = () => allProfiles().map((profile) => ({ ...profile, online: isRecentlyActive(profile) }));
 function profileById(id) {
   return allProfiles().find((profile) => Number(profile.id) === Number(id));
 }
@@ -228,11 +270,32 @@ async function handle(request, response) {
   const state = stateFor(user);
   const userNotifications = notifications.get(String(user.id)) || [];
   notifications.set(String(user.id), userNotifications);
+  if (request.method === 'POST' && url.pathname === '/api/presence') {
+    const profile = profileFor(user);
+    if (!profile) return json(response, 404, { error: 'Profile not found' });
+    profile.online = true;
+    profile.updated_at = new Date().toISOString();
+    userProfiles.set(String(user.id), profile);
+    await saveDatabase();
+    await remoteProfile(profile);
+    return json(response, 200, { online: true });
+  }
   if (url.pathname === '/api/profile' && request.method === 'GET') return json(response, 200, { profile: profileFor(user) || { id: user.id, name: user.first_name, age: 27, city: 'Москва', bio: '', tags: [], image: '' } });
   if (url.pathname === '/api/profile' && ['POST', 'PUT'].includes(request.method)) {
     const payload = await body(request); if (!payload?.name?.trim()) return json(response, 400, { error: 'Name is required' });
-    const profile = { id: user.id, name: payload.name.trim(), age: Number(payload.age) || 18, city: payload.city || 'Москва', distance: 'рядом с вами', bio: payload.bio || '', tags: Array.isArray(payload.tags) ? payload.tags : String(payload.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean), image: payload.image || '', gender: payload.gender === 'male' ? 'male' : 'female', interestedIn: ['male', 'female', 'all'].includes(payload.interestedIn) ? payload.interestedIn : 'all', online: true };
+    const modes = ['hot', 'quick', 'friends', 'relationship', 'casual', 'company'];
+    const profile = { id: user.id, name: payload.name.trim(), age: Number(payload.age) || 18, city: payload.city || 'Москва', distance: 'рядом с вами', bio: payload.bio || '', tags: Array.isArray(payload.tags) ? payload.tags.map(String).filter(Boolean).slice(0, 15) : [], image: payload.image || '', gender: payload.gender === 'male' ? 'male' : 'female', interestedIn: ['male', 'female', 'all'].includes(payload.interestedIn) ? payload.interestedIn : 'all', datingMode: modes.includes(payload.datingMode) ? payload.datingMode : 'friends', online: true, updated_at: new Date().toISOString() };
     userProfiles.set(String(user.id), profile); await saveDatabase(); await remoteProfile(profile); return json(response, 200, { profile });
+  }
+  if (url.pathname === '/api/profile' && request.method === 'DELETE') {
+    userProfiles.delete(String(user.id));
+    userState.delete(String(user.id));
+    notifications.delete(String(user.id));
+    for (const key of [...messages.keys()]) if (key.split(':').includes(String(user.id))) messages.delete(key);
+    sessions.forEach((session, token) => { if (String(session.id) === String(user.id)) sessions.delete(token); });
+    await saveDatabase();
+    await remoteDeleteProfile(user.id);
+    return json(response, 200, { deleted: true });
   }
   if (request.method === 'GET' && (url.pathname === '/api/discover' || url.pathname === '/api/profiles')) {
     const ownCity = profileFor(user)?.city;
@@ -243,7 +306,18 @@ async function handle(request, response) {
       const isTestProfile = Number(p.id) === testProfile.id;
       return Number(p.id) !== Number(user.id) && (isTestProfile || (sameArea && genderMatches)) && !state.skips.has(p.id) && !state.likes.has(p.id);
     });
-    return json(response, 200, { profiles: visible });
+    return json(response, 200, { profiles: visible.map((profile) => ({ ...profile, online: isRecentlyActive(profile) })) });
+  }
+  if (request.method === 'GET' && url.pathname === '/api/random-match') {
+    const ownProfile = profileFor(user);
+    const candidates = allProfiles().filter((candidate) => {
+      const genderMatches = !ownProfile?.interestedIn || ownProfile.interestedIn === 'all' || candidate.gender === ownProfile.interestedIn;
+      return Number(candidate.id) !== Number(user.id) && genderMatches;
+    });
+    if (!candidates.length) return json(response, 404, { error: 'Пока нет доступных собеседников' });
+    const candidate = candidates[Math.floor(Math.random() * candidates.length)];
+    randomRooms.set(String(user.id), Number(candidate.id));
+    return json(response, 200, { match: { id: Number(candidate.id), city: candidate.city || 'Город не указан', online: isRecentlyActive(candidate) } });
   }
   if (request.method === 'POST' && url.pathname === '/api/discover/skip') { const id = Number((await body(request))?.profileId); state.skips.add(id); await saveDatabase(); await remoteState(user.id, state); return json(response, 200, { skipped: true, profileId: id }); }
   if (request.method === 'GET' && url.pathname === '/api/likes') return json(response, 200, { likes: [...state.likes].map(Number), profiles: allProfiles().filter((p) => state.likes.has(p.id)) });
@@ -270,18 +344,28 @@ async function handle(request, response) {
     return json(response, 201, { liked: true, matched, profileId: id });
   }
   if (request.method === 'GET' && url.pathname === '/api/matches') {
-    const matches = allProfiles().filter((candidate) => state.likes.has(candidate.id) && stateFor({ id: candidate.id }).likes.has(Number(user.id)));
+    const matches = profilesWithPresence().filter((candidate) => state.likes.has(candidate.id) && stateFor({ id: candidate.id }).likes.has(Number(user.id)));
     return json(response, 200, { matches });
   }
   if (request.method === 'GET' && url.pathname === '/api/conversations') return json(response, 200, { conversations: conversationsFor(user) });
   const match = url.pathname.match(/^\/api\/conversations\/(\d+)\/messages$/);
   if (match) {
     const id = Number(match[1]);
-    const canChat = id === testProfile.id || state.likes.has(id);
+    const canChat = id === testProfile.id || state.likes.has(id) || randomRooms.get(String(user.id)) === id;
     if (!canChat) return json(response, 404, { error: 'Conversation not found' });
     const key = conversationKey(user.id, id); if (!messages.has(key)) messages.set(key, []);
     if (request.method === 'GET') return json(response, 200, { messages: messages.get(key).map((message) => ({ ...message, sender: String(message.senderId) === String(user.id) ? 'me' : 'them' })) });
-    if (request.method === 'POST') { const payload = await body(request); if (!payload?.text?.trim()) return json(response, 400, { error: 'Message text is required' }); const message = { id: randomUUID(), senderId: String(user.id), text: payload.text.trim(), createdAt: new Date().toISOString() }; messages.get(key).push(message); await saveDatabase(); await remoteMessage(user.id, id, message); return json(response, 201, { message: { ...message, sender: 'me' } }); }
+    if (request.method === 'POST') {
+      const payload = await body(request);
+      if (!payload?.text?.trim()) return json(response, 400, { error: 'Message text is required' });
+      const message = { id: randomUUID(), senderId: String(user.id), text: payload.text.trim(), createdAt: new Date().toISOString() };
+      messages.get(key).push(message);
+      await saveDatabase();
+      await remoteMessage(user.id, id, message);
+      const senderName = randomRooms.get(String(user.id)) === id ? 'Анонимный собеседник' : (profileFor(user)?.name || user.first_name || 'Пользователь');
+      await notifyTelegramMessage(id, senderName, message.text);
+      return json(response, 201, { message: { ...message, sender: 'me' } });
+    }
   }
   return json(response, 404, { error: 'Not found' });
 }
