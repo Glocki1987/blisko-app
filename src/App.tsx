@@ -191,31 +191,10 @@ function Onboarding({ profile, onDone, saving }: { profile: Profile; onDone: (pr
   const [step, setStep] = useState(1);
   const [genderSelected, setGenderSelected] = useState(false);
   const [interestedSelected, setInterestedSelected] = useState(false);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [locationError, setLocationError] = useState('');
+  const locationLoading = false;
+  const locationError = '';
+  const detectLocation = () => undefined;
   const setPhoto = (file?: File) => { if (!file || !file.type.startsWith('image/') || file.size > 5_000_000) return; const reader = new FileReader(); reader.onload = () => setForm({ ...form, image: String(reader.result) }); reader.readAsDataURL(file); };
-  const detectLocation = () => {
-    if (!navigator.geolocation) { setLocationError('Геолокация недоступна на этом устройстве.'); return; }
-    setLocationLoading(true);
-    setLocationError('');
-    navigator.geolocation.getCurrentPosition(async position => {
-      try {
-        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${position.coords.latitude}&lon=${position.coords.longitude}&zoom=10&accept-language=ru`);
-        if (!response.ok) throw new Error('Location lookup failed');
-        const result = await response.json() as { address?: { city?: string; town?: string; village?: string; municipality?: string } };
-        const city = result.address?.city || result.address?.town || result.address?.village || result.address?.municipality;
-        if (!city) throw new Error('City not found');
-        setForm(current => ({ ...current, city }));
-      } catch {
-        setLocationError('Не удалось определить город. Выбери его из списка.');
-      } finally {
-        setLocationLoading(false);
-      }
-    }, () => {
-      setLocationLoading(false);
-      setLocationError('Разреши доступ к геолокации или выбери город вручную.');
-    }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
-  };
   const next = () => setStep(current => Math.min(7, current + 1));
   const back = () => setStep(current => Math.max(1, current - 1));
   const canContinue = (step === 1 && form.name.trim() && form.age >= 18) || (step === 2 && genderSelected) || (step === 3 && interestedSelected) || (step === 4 && Boolean(form.city)) || (step === 5 && Boolean(form.image)) || (step === 6 && Boolean(form.datingMode)) || step === 7;
