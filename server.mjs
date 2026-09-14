@@ -10,6 +10,7 @@ const TELEGRAM_INIT_DATA_TTL_MS = 60 * 60 * 1000;
 const RANDOM_ROOM_TTL_MS = 30 * 60 * 1000;
 const AUTH_RATE_LIMIT = 20;
 const AUTH_RATE_WINDOW_MS = 5 * 60 * 1000;
+const MAX_SESSIONS_PER_USER = 5;
 const dbFile = new URL('./blisko.local.json', import.meta.url);
 const demoProfileIds = new Set(['900000001', '987654']);
 const sessions = new Map();
@@ -379,7 +380,14 @@ async function handle(request, response) {
       const storedProfile = await remoteProfileById(user.id);
       if (storedProfile) userProfiles.set(String(user.id), storedProfile);
     }
-    const accessToken = randomUUID(); sessions.set(accessToken, { id: user.id, first_name: user.first_name || 'Пользователь', username: user.username, expiresAt: Date.now() + SESSION_TTL_MS });
+    const accessToken = randomUUID();
+    const now = Date.now();
+    const userSessions = [...sessions.entries()].filter(([, session]) => String(session.id) === String(user.id)).sort(([, first], [, second]) => (first.createdAt || 0) - (second.createdAt || 0));
+    while (userSessions.length >= MAX_SESSIONS_PER_USER) {
+      const [oldestToken] = userSessions.shift();
+      sessions.delete(oldestToken);
+    }
+    sessions.set(accessToken, { id: user.id, first_name: user.first_name || 'Пользователь', username: user.username, createdAt: now, expiresAt: now + SESSION_TTL_MS });
     return json(response, 200, { accessToken, user, profile: profileFor(user) || null });
   }
   if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
