@@ -313,11 +313,14 @@ async function handle(request, response) {
   if (request.method === 'GET' && (url.pathname === '/api/discover' || url.pathname === '/api/profiles')) {
     const ownCity = profileFor(user)?.city;
     const nearby = new Set(['Warszawa', 'Nowy Dwór Mazowiecki']);
-    const visible = [...userProfiles.values()].filter((p) => {
+    const candidates = [...userProfiles.values()].filter((p) => {
       const sameArea = !ownCity || !p.city || p.city === ownCity || (nearby.has(ownCity) && nearby.has(p.city));
       const genderMatches = !profileFor(user)?.interestedIn || profileFor(user).interestedIn === 'all' || p.gender === profileFor(user).interestedIn;
-      return Number(p.id) !== Number(user.id) && sameArea && genderMatches && !state.skips.has(p.id) && !state.likes.has(p.id);
+      return { profile: p, sameArea, genderMatches };
     });
+    const eligible = candidates.filter(({ profile, genderMatches }) => Number(profile.id) !== Number(user.id) && genderMatches && !state.skips.has(profile.id) && !state.likes.has(profile.id));
+    const nearbyProfiles = eligible.filter(({ sameArea }) => sameArea);
+    const visible = (nearbyProfiles.length ? nearbyProfiles : eligible).map(({ profile }) => profile);
     return json(response, 200, { profiles: visible.map((profile) => ({ ...profile, online: isRecentlyActive(profile) })) });
   }
   if (request.method === 'GET' && url.pathname === '/api/random-match') {
