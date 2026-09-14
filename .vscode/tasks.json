@@ -4,14 +4,14 @@
     {
       "label": "Install dependencies",
       "type": "shell",
-      "command": "npm install",
+      "command": "npm.cmd install",
       "inAgents": true,
       "runOptions": { "runOn": "worktreeCreated" }
     },
     {
       "label": "Start BLISKO API",
       "type": "shell",
-      "command": "npm run server",
+      "command": "npm.cmd run server",
       "inAgents": true
     }
   ]
