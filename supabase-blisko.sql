@@ -57,6 +57,23 @@ alter table public.blisko_notifications add column if not exists related_id text
 
 -- Remove legacy demo profiles and their related test data.
 delete from public.blisko_messages where user_id in ('900000001', '987654') or profile_id in ('900000001', '987654');
+update public.blisko_user_state
+set likes = (
+  select coalesce(jsonb_agg(value), '[]'::jsonb)
+  from jsonb_array_elements(likes) as item(value)
+  where value #>> '{}' not in ('900000001', '987654')
+), skips = (
+  select coalesce(jsonb_agg(value), '[]'::jsonb)
+  from jsonb_array_elements(skips) as item(value)
+  where value #>> '{}' not in ('900000001', '987654')
+)
+where exists (
+  select 1 from jsonb_array_elements(likes) as item(value)
+  where value #>> '{}' in ('900000001', '987654')
+) or exists (
+  select 1 from jsonb_array_elements(skips) as item(value)
+  where value #>> '{}' in ('900000001', '987654')
+);
 delete from public.blisko_user_state where user_id in ('900000001', '987654');
-delete from public.blisko_notifications where user_id in ('900000001', '987654');
+delete from public.blisko_notifications where user_id in ('900000001', '987654') or related_id in ('900000001', '987654');
 delete from public.blisko_profiles where id in ('900000001', '987654');

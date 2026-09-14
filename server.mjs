@@ -99,16 +99,31 @@ async function remoteDeleteProfile(userId) {
 }
 async function removeDemoData() {
   const demoIds = [...demoProfileIds];
+  const demoNumbers = new Set(demoIds.map(Number));
   for (const id of demoIds) {
     userProfiles.delete(id);
     userState.delete(id);
     notifications.delete(id);
+  }
+  for (const state of userState.values()) {
+    for (const id of [...state.likes]) if (demoNumbers.has(Number(id))) state.likes.delete(id);
+    for (const id of [...state.skips]) if (demoNumbers.has(Number(id))) state.skips.delete(id);
+  }
+  for (const list of notifications.values()) {
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (demoIds.includes(String(list[index].relatedId))) list.splice(index, 1);
+    }
   }
   for (const key of [...messages.keys()]) {
     if (demoIds.some((id) => key.split(':').includes(id))) messages.delete(key);
   }
   if (!supabaseClient()) return;
   for (const id of demoIds) await remoteDeleteProfile(id);
+  for (const [userId, state] of userState) await remoteState(userId, state);
+  for (const demoId of demoIds) {
+    const { error } = await supabase.from('blisko_notifications').delete().eq('related_id', demoId);
+    if (error) throw new Error(`Supabase blisko_notifications cleanup: ${error.message}`);
+  }
 }
 async function remoteState(userId, state) {
   if (!supabaseClient()) return;
