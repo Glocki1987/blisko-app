@@ -21,6 +21,13 @@ let supabase = null;
 let supabaseReady = false;
 const conversationKey = (firstId, secondId) => [Number(firstId), Number(secondId)].sort((a, b) => a - b).join(':');
 const numericIds = (values) => (Array.isArray(values) ? values : []).map(Number).filter(Number.isFinite);
+function cleanupRandomRooms() {
+  const now = Date.now();
+  const validProfileIds = new Set(allProfiles().map((profile) => String(profile.id)));
+  for (const [userId, room] of randomRooms) {
+    if (room.expiresAt <= now || !validProfileIds.has(String(userId)) || !validProfileIds.has(String(room.id))) randomRooms.delete(userId);
+  }
+}
 function supabaseClient() {
   if (supabase) return supabase;
   const url = process.env.SUPABASE_URL;
@@ -296,7 +303,10 @@ function conversationsFor(user) {
 }
 function allProfiles() {
   const unique = new Map();
-  for (const profile of userProfiles.values()) unique.set(String(profile.id), profile);
+  for (const profile of userProfiles.values()) {
+    const age = Number(profile.age);
+    if (Number.isSafeInteger(Number(profile.id)) && Number(profile.id) > 0 && Number.isInteger(age) && age >= 18 && age <= 100) unique.set(String(profile.id), profile);
+  }
   return [...unique.values()];
 }
 const isRecentlyActive = (profile) => {
@@ -321,6 +331,7 @@ async function addNotification(userId, notification) {
   await remoteNotification(userId, notification);
 }
 async function handle(request, response) {
+  cleanupRandomRooms();
   const requestOrigin = request.headers.origin;
   if (requestOrigin && allowedOrigins().has(requestOrigin)) response.setHeader('access-control-allow-origin', requestOrigin);
   if (request.method === 'OPTIONS') return json(response, 204, {});
@@ -449,7 +460,6 @@ async function handle(request, response) {
     const id = Number(match[1]);
     const room = randomRooms.get(String(user.id));
     const randomChatAllowed = room && room.expiresAt > Date.now() && room.id === id;
-    if (room && room.expiresAt <= Date.now()) randomRooms.delete(String(user.id));
     const mutualLike = state.likes.has(id) && stateFor({ id }).likes.has(Number(user.id));
     const canChat = mutualLike || randomChatAllowed;
     if (!canChat) return json(response, 404, { error: 'Conversation not found' });
